@@ -17,8 +17,8 @@ class Settings(BaseSettings):
 
     whisper_model: str = "base.en"
 
-    match_threshold: float = 0.55
-    min_chunk_seconds: float = 1.5
+    match_threshold: float = 0.37
+    min_chunk_seconds: float = 2.0
     unknown_chunks_to_flip: int = 2
     room_cooldown_seconds: int = 180
 
