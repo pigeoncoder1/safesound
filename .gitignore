@@ -8,5 +8,7 @@ venv/
 
 .env
 
-data/
+data/*
+!data/people.json
+!data/world.json
 CONTEXT.md

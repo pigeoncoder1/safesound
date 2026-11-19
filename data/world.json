@@ -1,0 +1,63 @@
+{
+  "inbox": [
+    {
+      "id": 1,
+      "from": "Northbridge Bank",
+      "subject": "Your login passcode",
+      "body": "Your one-time passcode is 482913. It expires in 10 minutes. We will never ask you to share it.",
+      "received": "08:12",
+      "sensitive": true
+    },
+    {
+      "id": 2,
+      "from": "Riverside Medical Practice",
+      "subject": "Your test results",
+      "body": "Hi Sam, your blood test results are back. The doctor would like you to book a follow-up appointment this week to discuss them.",
+      "received": "09:47",
+      "sensitive": true
+    },
+    {
+      "id": 3,
+      "from": "Alex",
+      "subject": "Tonight",
+      "body": "Can you grab some milk and bread on the way home? I'll start dinner around seven.",
+      "received": "11:05",
+      "sensitive": false
+    },
+    {
+      "id": 4,
+      "from": "Priya (boss)",
+      "subject": "Confidential: team changes",
+      "body": "Please keep this to yourself for now, but the team restructure is being announced on Friday. Your role is safe. Let's talk tomorrow.",
+      "received": "12:30",
+      "sensitive": true
+    },
+    {
+      "id": 5,
+      "from": "ParcelGo",
+      "subject": "Your parcel is on its way",
+      "body": "Your parcel will be delivered today between 2pm and 4pm.",
+      "received": "13:15",
+      "sensitive": false
+    },
+    {
+      "id": 6,
+      "from": "Jordan",
+      "subject": "Football on Saturday?",
+      "body": "A few of us are playing five-a-side on Saturday at 10. You in?",
+      "received": "14:02",
+      "sensitive": false
+    }
+  ],
+  "location": {
+    "exact": "Hiya office, London",
+    "rough": "at work",
+    "back_by": "18:00"
+  },
+  "calendar": [
+    {"title": "Team stand-up", "start": "09:30", "end": "09:45"},
+    {"title": "Dentist appointment", "start": "12:00", "end": "12:45"},
+    {"title": "Quarterly review with Priya", "start": "14:00", "end": "15:00"},
+    {"title": "Gym", "start": "18:30", "end": "19:30"}
+  ]
+}

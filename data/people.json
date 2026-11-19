@@ -1,0 +1,7 @@
+[
+  {
+    "name": "Richie",
+    "relationship": "owner",
+    "voice_file": "voices/owner.npy"
+  }
+]
