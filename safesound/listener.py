@@ -22,6 +22,10 @@ class Listener:
         self.segment: list[np.ndarray] | None = None
         self.muted = False
 
+    def reload_people(self) -> None:
+        self.voices = load_voices()
+        self.names = [p["name"] for p in load_people()]
+
     def mute(self) -> None:
         self.muted = True
         self.pending = np.zeros(0, dtype=np.float32)

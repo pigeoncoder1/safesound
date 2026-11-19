@@ -19,3 +19,15 @@ def lookup(label: str, people: list[dict]) -> dict:
 
 def owner_name(people: list[dict]) -> str | None:
     return next((p["name"] for p in people if p["relationship"] == "owner"), None)
+
+
+def save_people(people: list[dict], path: Path = PEOPLE_FILE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(people, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def upsert_person(name: str, relationship: str, voice_file: str, path: Path = PEOPLE_FILE) -> list[dict]:
+    people = [p for p in load_people(path) if p["name"].lower() != name.lower() and p["voice_file"] != voice_file]
+    people.append({"name": name, "relationship": relationship, "voice_file": voice_file})
+    save_people(people, path)
+    return people

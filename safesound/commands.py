@@ -10,11 +10,17 @@ PRONOUNS = {"he", "she", "they", "him", "her", "them"}
 
 PARTNER_WORDS = ["other half", "girlfriend", "boyfriend", "fiancée", "fiancee", "fiancé", "fiance", "partner", "husband", "spouse", "wife"]
 FRIEND_WORDS = ["best friend", "friend", "buddy", "mate", "pal"]
+FAMILY_WORDS = [
+    "family", "brother", "sister", "sibling", "mum", "mom", "mother", "dad", "father", "parent",
+    "son", "daughter", "cousin", "aunt", "auntie", "uncle", "niece", "nephew", "nan", "gran",
+    "grandma", "grandmother", "grandad", "grandpa", "grandfather", "relative",
+]
 
 WAKE = r"^\s*(?:(?:hey|hi|ok|okay)\s+)?(?:safe\s?sound|earshot)\b[\s,.!?:]*"
 PERSON = r"(?P<person>(?-i:[A-Z][\w'-]*)|he|she|they|him|her|them)"
 NAME = r"(?-i:[A-Z][\w'-]*)"
-REL = "|".join(re.escape(w) for w in PARTNER_WORDS + FRIEND_WORDS)
+REL = "|".join(re.escape(w) for w in sorted(PARTNER_WORDS + FAMILY_WORDS + FRIEND_WORDS, key=len, reverse=True))
+RELATIONSHIP_WORD = re.compile(rf"\b(?:{REL})\b", re.I)
 WHEN = r"(?P<when>right now|now|today|tonight|tomorrow|later|this (?:morning|afternoon|evening|weekend)|at \d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
 
 INTRODUCE = [
@@ -78,12 +84,17 @@ def person_or_owner(word: str | None) -> str | None:
 def relationship_from(word: str | None) -> str | None:
     if not word:
         return None
-    word = word.lower()
-    if word in PARTNER_WORDS:
+    word = word.strip().lower()
+    if word in PARTNER_WORDS or word in FAMILY_WORDS:
         return "partner"
     if word in FRIEND_WORDS:
         return "friend"
     return None
+
+
+def relationship_in(text: str) -> str | None:
+    m = RELATIONSHIP_WORD.search(text or "")
+    return relationship_from(m[0]) if m else None
 
 
 def clean_message(text: str) -> str:
@@ -243,3 +254,7 @@ def understand(text: str, known_names: list[str]) -> tuple[dict, str]:
 
 def addressed_to_assistant(text: str) -> bool:
     return bool(re.match(WAKE, text or "", re.I))
+
+
+def only_wake_word(text: str) -> bool:
+    return addressed_to_assistant(text) and not re.sub(WAKE, "", text or "", flags=re.I).strip(" .,!?")

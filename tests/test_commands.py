@@ -301,3 +301,14 @@ def test_real_llm_paraphrases(monkeypatch):
 def test_misheard_names_are_matched_to_known_people(fake_llm, text, expected):
     fake_llm({})
     assert understand(text, KNOWN) == (expected, "regex")
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Safesound", True),
+    ("Safesound.", True),
+    ("Hey safe sound!", True),
+    ("Safesound, where am I?", False),
+    ("Where am I?", False),
+])
+def test_only_wake_word(text, expected):
+    assert commands.only_wake_word(text) is expected

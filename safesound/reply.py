@@ -283,10 +283,7 @@ def introduce(args: dict, relationship: str, channel: str, room_state: str, ctx:
         return deflect_call(ctx, [])
     if relationship != "owner":
         return for_channel(result("Nice to meet you."), relationship, channel, ctx)
-    name = args.get("name")
-    if not args.get("relationship"):
-        return result(f"Nice to meet you, {name}. How do you know {ctx.owner}?")
-    return result(f"Nice to meet you, {name}.")
+    return result("Let's do introductions in person, when you're both here.")
 
 
 def unclear(args: dict, relationship: str, channel: str, room_state: str, ctx: Context | None = None) -> dict:

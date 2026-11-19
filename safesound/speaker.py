@@ -70,3 +70,25 @@ def identify(audio: np.ndarray, voices: dict[str, np.ndarray], threshold: float)
     vec = embed(audio)
     name, score = max(((n, similarity(vec, v)) for n, v in voices.items()), key=lambda pair: pair[1])
     return (name if score >= threshold else "unknown"), score
+
+
+CHUNK_SECONDS = 2.0
+SILENCE_RMS = 0.01
+
+
+def split_chunks(audio: np.ndarray, seconds: float = CHUNK_SECONDS) -> list[np.ndarray]:
+    size = int(seconds * SAMPLE_RATE)
+    return [audio[i:i + size] for i in range(0, len(audio) - size + 1, size)]
+
+
+def rms(chunk: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(chunk ** 2)))
+
+
+def voiceprint_from(audio: np.ndarray) -> tuple[np.ndarray | None, int, int]:
+    chunks = split_chunks(audio)
+    voiced = [c for c in chunks if rms(c) >= SILENCE_RMS]
+    if not voiced:
+        return None, 0, len(chunks)
+    mean = np.mean([embed(c) for c in voiced], axis=0)
+    return (mean / (np.linalg.norm(mean) + 1e-9)).astype(np.float32), len(voiced), len(chunks)

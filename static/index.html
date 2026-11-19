@@ -168,6 +168,17 @@
         addLog(`🔊 safesound: "${e.text}"`, "say");
         if (session) speak(e.text, session.ws);
       }
+      else if (e.type === "introduction") {
+        const who = e.relationship ? `${e.name} (${e.relationship === "partner" ? "family/partner" : e.relationship})` : e.name;
+        const text = {
+          asking: `👋 introducing ${who}: asking how they know you`,
+          collecting: `👋 learning ${who}'s voice: ${e.seconds.toFixed(1)} / ${e.target} s`,
+          done: `👋 remembered ${who}`,
+          failed: `👋 couldn't learn ${who}'s voice (only ${e.seconds.toFixed(1)} s)`,
+          cancelled: `👋 introduction of ${e.name} cancelled`,
+        }[e.stage];
+        addLog(text, e.stage === "done" ? "known" : e.stage === "failed" ? "unknown" : "command");
+      }
       else if (e.type === "disclosure") {
         const parts = [];
         if (e.disclosed.length) parts.push(`disclosed: ${e.disclosed.join(", ")}`);

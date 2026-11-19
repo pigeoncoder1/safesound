@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .calls import call_status, current_call, effective_relationship, end_call, find_person, start_call, verify_caller
-from .commands import addressed_to_assistant, understand
+from .commands import addressed_to_assistant, only_wake_word, understand
 from .config import settings
+from .introductions import Introduction, problem_with
 from .listener import Listener
 from .people import load_people, lookup, owner_name
 from .reply import Context, respond
@@ -51,6 +52,30 @@ async def audio_socket(ws: WebSocket) -> None:
     room = RoomState()
     people = load_people()
     last_sent = None
+    intro: Introduction | None = None
+
+    async def say(text: str) -> None:
+        await ws.send_json({"type": "say", "text": text})
+
+    async def finish_intro(current: Introduction) -> None:
+        line = await asyncio.to_thread(current.finish)
+        if current.stage == "done":
+            listener.reload_people()
+            people[:] = load_people()
+        await ws.send_json(current.status())
+        await say(line)
+
+    async def expire_intro_if_due() -> None:
+        nonlocal intro
+        if intro is None or not intro.timed_out(time.monotonic()):
+            return
+        current, intro = intro, None
+        if current.stage == "collecting":
+            await finish_intro(current)
+        else:
+            line = current.cancel()
+            await ws.send_json(current.status())
+            await say(line)
 
     async def push_room_if_changed() -> None:
         nonlocal last_sent
@@ -64,8 +89,10 @@ async def audio_socket(ws: WebSocket) -> None:
         while True:
             await asyncio.sleep(ROOM_TICK_SECONDS)
             await push_room_if_changed()
+            await expire_intro_if_due()
 
     async def handle_segment(segment) -> None:
+        nonlocal intro
         heard = await asyncio.to_thread(listener.analyse, segment)
         if heard is None:
             return
@@ -73,6 +100,14 @@ async def audio_socket(ws: WebSocket) -> None:
         call = current_call()
         channel = "call" if call else "room"
         await ws.send_json({"type": "voice", "channel": channel, **{k: heard[k] for k in ("label", "score", "seconds", "reliable")}})
+
+        if intro and channel == "room" and intro.wants(heard["label"]):
+            if intro.add(segment):
+                current, intro = intro, None
+                await finish_intro(current)
+            else:
+                await ws.send_json(intro.status())
+            return
 
         if call:
             before = call_status(people)
@@ -92,21 +127,44 @@ async def audio_socket(ws: WebSocket) -> None:
 
         if not heard["text"]:
             return
+
+        async def send_transcript(path: str) -> None:
+            await ws.send_json({
+                "type": "transcript",
+                "channel": channel,
+                "speaker": speaker["label"],
+                "name": speaker["name"],
+                "relationship": speaker["relationship"],
+                "text": heard["text"],
+                "path": path,
+            })
+
+        if intro and intro.stage == "asking" and channel == "room" and speaker["relationship"] == "owner":
+            await send_transcript("answer")
+            line = intro.hear_answer(heard["text"], time.monotonic())
+            await ws.send_json(intro.status())
+            if intro.stage == "cancelled":
+                intro = None
+            await say(line)
+            return
+
         known_names = [p["name"] for p in people]
         command, path = await asyncio.to_thread(understand, heard["text"], known_names)
-        await ws.send_json({
-            "type": "transcript",
-            "channel": channel,
-            "speaker": speaker["label"],
-            "name": speaker["name"],
-            "relationship": speaker["relationship"],
-            "text": heard["text"],
-            "path": path,
-        })
+        await send_transcript(path)
 
-        if path == "unclear" and channel == "room" and not addressed_to_assistant(heard["text"]):
+        if path == "unclear" and (only_wake_word(heard["text"]) or (channel == "room" and not addressed_to_assistant(heard["text"]))):
             return
         await ws.send_json({"type": "command", "channel": channel, "speaker": speaker["label"], **command})
+
+        if command["intent"] == "introduce" and channel == "room" and speaker["relationship"] == "owner":
+            problem = problem_with(command.get("name"), owner_name(people))
+            if problem:
+                await say(problem)
+                return
+            intro = Introduction(command["name"], command.get("relationship"), time.monotonic())
+            await ws.send_json(intro.status())
+            await say(intro.opening_line())
+            return
 
         ctx = Context(
             speaker_name=speaker["name"],
@@ -116,7 +174,7 @@ async def audio_socket(ws: WebSocket) -> None:
             owner=owner_name(people),
         )
         answer = await asyncio.to_thread(respond, command, speaker["relationship"], channel, room.state(time.monotonic()), ctx)
-        await ws.send_json({"type": "say", "text": answer["text"]})
+        await say(answer["text"])
         await ws.send_json({"type": "disclosure", "disclosed": answer["disclosed"], "withheld": answer["withheld"]})
 
     await push_room_if_changed()

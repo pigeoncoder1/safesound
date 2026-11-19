@@ -9,14 +9,10 @@ import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safesound.speaker import SAMPLE_RATE, embed, load_wav
+from safesound.speaker import SAMPLE_RATE, VOICES_DIR, load_wav, voiceprint_from
 
 ROOT = Path(__file__).resolve().parent.parent
 ENROLL_DIR = ROOT / "data" / "enroll"
-VOICES_DIR = ROOT / "data" / "voices"
-
-CHUNK_SECONDS = 2.0
-SILENCE_RMS = 0.01
 
 PROMPT = """\
 The quick brown fox jumps over the lazy dog, but nobody saw it happen.
@@ -46,15 +42,6 @@ def record(seconds: float) -> np.ndarray:
     return audio[:, 0]
 
 
-def split_chunks(audio: np.ndarray) -> list[np.ndarray]:
-    size = int(CHUNK_SECONDS * SAMPLE_RATE)
-    return [audio[i:i + size] for i in range(0, len(audio) - size + 1, size)]
-
-
-def rms(chunk: np.ndarray) -> float:
-    return float(np.sqrt(np.mean(chunk ** 2)))
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Enrol a voice for safesound.")
     parser.add_argument("--name", required=True, help="e.g. owner or trusted")
@@ -72,16 +59,12 @@ def main() -> None:
         sf.write(wav_path, audio, SAMPLE_RATE)
         print(f"Saved recording to {wav_path}")
 
-    chunks = split_chunks(audio)
-    voiced = [c for c in chunks if rms(c) >= SILENCE_RMS]
-    print(f"Used {len(voiced)} of {len(chunks)} chunks ({len(chunks) - len(voiced)} too quiet).")
+    voiceprint, used, total = voiceprint_from(audio)
+    print(f"Used {used} of {total} chunks ({total - used} too quiet).")
 
-    if not voiced:
+    if voiceprint is None:
         print("No usable speech found. Check your microphone and try again.")
         sys.exit(1)
-
-    mean = np.mean([embed(c) for c in voiced], axis=0)
-    voiceprint = (mean / (np.linalg.norm(mean) + 1e-9)).astype(np.float32)
 
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
     npy_path = VOICES_DIR / f"{args.name}.npy"
