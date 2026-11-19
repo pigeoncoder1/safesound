@@ -4,9 +4,113 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>safesound</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    button { font-size: 1rem; padding: 0.5rem 1rem; margin-right: 0.5rem; }
+    #status { margin: 1rem 0; color: #555; }
+    #log { list-style: none; padding: 0; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+    #log li { padding: 0.3rem 0; border-bottom: 1px solid #eee; }
+    .known { color: #1a7f37; }
+    .unknown { color: #cf222e; font-weight: bold; }
+    .muted { color: #888; }
+    #room { margin: 1rem 0; padding: 0.8rem 1rem; border-radius: 8px; background: #f3f3f3; }
+    #room.private { background: #dafbe1; }
+    #room.not_private { background: #ffebe9; }
+    #room-state { font-size: 1.3rem; font-weight: bold; }
+    #room-details { margin-top: 0.3rem; font-size: 0.9rem; color: #333; }
+  </style>
 </head>
 <body>
   <h1>safesound</h1>
-  <p>Placeholder page. The voice assistant UI will go here.</p>
+  <button id="start">Start</button>
+  <button id="stop" disabled>Stop</button>
+  <button id="say" disabled>Speak test sentence</button>
+  <div id="status">Press Start and allow microphone access.</div>
+  <div id="room">
+    <div id="room-state">Room: not listening</div>
+    <div id="room-details"></div>
+  </div>
+  <ul id="log"></ul>
+
+  <script type="module">
+    import { startAudio } from "/static/audio.js";
+    import { speak } from "/static/tts.js";
+
+    const startBtn = document.getElementById("start");
+    const stopBtn = document.getElementById("stop");
+    const sayBtn = document.getElementById("say");
+    const status = document.getElementById("status");
+    const log = document.getElementById("log");
+    let session = null;
+    let room = null;
+    let roomReceivedAt = 0;
+
+    const roomBox = document.getElementById("room");
+    const roomState = document.getElementById("room-state");
+    const roomDetails = document.getElementById("room-details");
+
+    function renderRoom() {
+      if (!room) {
+        roomBox.className = "";
+        roomState.textContent = "Room: not listening";
+        roomDetails.textContent = "";
+        return;
+      }
+      const age = (Date.now() - roomReceivedAt) / 1000;
+      const ago = s => `${Math.round(s + age)}s ago`;
+      roomBox.className = room.state;
+      roomState.textContent = room.state === "private" ? "Room: PRIVATE" : "Room: NOT PRIVATE";
+      const owner = room.owner_last_heard === null ? "never" : ago(room.owner_last_heard);
+      const voices = room.voices.length
+        ? room.voices.map(v => `${v.label} (${ago(v.last_heard_seconds_ago)})`).join(", ")
+        : "nobody yet";
+      roomDetails.textContent = `Owner last heard: ${owner}. Voices: ${voices}.`;
+    }
+    setInterval(renderRoom, 1000);
+
+    function addLog(text, cls = "") {
+      const li = document.createElement("li");
+      li.textContent = `${new Date().toLocaleTimeString()}  ${text}`;
+      li.className = cls;
+      log.prepend(li);
+    }
+
+    function onEvent(e) {
+      if (e.type === "connected") status.textContent = `Listening (mic at ${e.sampleRate} Hz, sent at 16000 Hz).`;
+      else if (e.type === "closed") { status.textContent = "Disconnected."; room = null; renderRoom(); }
+      else if (e.type === "room") {
+        if (room && room.state !== e.state) addLog(`room is now ${e.state.replace("_", " ")}`, e.state === "private" ? "known" : "unknown");
+        room = e;
+        roomReceivedAt = Date.now();
+        renderRoom();
+      }
+      else if (e.type === "voice") addLog(`${e.label}  score ${e.score.toFixed(3)}  (${e.seconds}s)`, e.label === "unknown" ? "unknown" : "known");
+      else if (e.type === "short") addLog(`ignored ${e.seconds}s of speech (too short)`, "muted");
+      else if (e.type === "tts_start") addLog("assistant speaking: mic ignored", "muted");
+      else if (e.type === "tts_end") addLog("assistant finished: listening again", "muted");
+    }
+
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      try {
+        session = await startAudio(onEvent);
+        stopBtn.disabled = false;
+        sayBtn.disabled = false;
+      } catch (err) {
+        status.textContent = `Could not start: ${err.message}`;
+        startBtn.disabled = false;
+      }
+    };
+
+    stopBtn.onclick = () => {
+      session.stop();
+      session = null;
+      stopBtn.disabled = true;
+      sayBtn.disabled = true;
+      startBtn.disabled = false;
+    };
+
+    sayBtn.onclick = () => speak("This is a test. While I am talking, the microphone is ignored.", session.ws);
+  </script>
 </body>
 </html>

@@ -10,6 +10,7 @@ EMBEDDING_DIM = 192
 
 MODEL_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
 MODEL_DIR = Path(__file__).resolve().parent.parent / "data" / "models"
+VOICES_DIR = Path(__file__).resolve().parent.parent / "data" / "voices"
 
 _model = None
 
@@ -57,3 +58,15 @@ def load_wav(path: str | Path) -> np.ndarray:
         mono = AF.resample(torch.from_numpy(mono), orig_freq=sr, new_freq=SAMPLE_RATE).numpy()
 
     return mono.astype(np.float32)
+
+
+def load_voices(folder: str | Path = VOICES_DIR) -> dict[str, np.ndarray]:
+    return {p.stem: np.load(p) for p in sorted(Path(folder).glob("*.npy"))}
+
+
+def identify(audio: np.ndarray, voices: dict[str, np.ndarray], threshold: float) -> tuple[str, float]:
+    if not voices:
+        return "unknown", 0.0
+    vec = embed(audio)
+    name, score = max(((n, similarity(vec, v)) for n, v in voices.items()), key=lambda pair: pair[1])
+    return (name if score >= threshold else "unknown"), score
