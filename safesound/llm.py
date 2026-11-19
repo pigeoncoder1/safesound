@@ -20,10 +20,14 @@ def complete(system: str, user: str, max_tokens: int = 300) -> str | None:
             msg = _anthropic_client.messages.create(
                 model=settings.anthropic_model,
                 max_tokens=max_tokens,
+                thinking={"type": "disabled"},
+                output_config={"effort": "low"},
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
             text = "".join(block.text for block in msg.content if block.type == "text").strip()
+            if not text:
+                log.warning("LLM returned no text (stop_reason=%s); falling back to rules.", msg.stop_reason)
             return text or None
 
         if PROVIDER == "ollama":

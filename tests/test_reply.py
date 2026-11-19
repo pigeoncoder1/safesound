@@ -40,7 +40,7 @@ REQUESTS = [
 @pytest.fixture
 def make_ctx(tmp_path):
     def make(**kwargs):
-        defaults = {"world": WORLD, "owner": OWNER, "now": "12:20", "left_messages_file": tmp_path / "left.json"}
+        defaults = {"world": WORLD, "owner": OWNER, "now": "12:20", "activity_file": tmp_path / "activity.json", "use_llm": False}
         return Context(**{**defaults, **kwargs})
     return make
 
@@ -173,29 +173,18 @@ def test_questions_about_other_people_reveal_nothing(make_ctx):
     assert reply["text"] == "I'm not sure, sorry."
 
 
-def test_leave_message_is_stored_with_verification(make_ctx, tmp_path):
-    ctx = make_ctx(speaker_label="unknown", caller_id="Reuben", verification="mismatch")
-    reply = respond({"intent": "leave_message", "to": None, "text": "call me back"}, "unknown", "call", "private", ctx)
-    assert reply["text"] == "I'll pass that on."
-    stored = __import__("json").loads((tmp_path / "left.json").read_text())
-    assert stored[0]["text"] == "call me back"
-    assert stored[0]["verification"] == "mismatch"
-    assert stored[0]["caller_id"] == "Reuben"
-    assert stored[0]["from"] is None
+def test_leave_message_reply(make_ctx):
+    reply = ask(make_ctx, {"intent": "leave_message", "to": None, "text": "call me back"}, "unknown", "call", "private",
+                caller_id="Reuben", verification="mismatch")
+    assert reply == {"text": "I'll pass that on.", "disclosed": [], "withheld": []}
+    reply = ask(make_ctx, {"intent": "leave_message", "to": None, "text": "running late"}, "friend", "call", "private",
+                speaker_name="Reuben", caller_id="Reuben", verification="verified")
+    assert reply["text"] == "Thanks Reuben, I'll pass that on."
 
 
-def test_digest_tells_owner_about_mismatched_caller_then_clears(make_ctx):
-    respond({"intent": "leave_message", "to": None, "text": "call me back"}, "unknown", "call", "private",
-            make_ctx(caller_id="Reuben", verification="mismatch", now="15:05"))
-    respond({"intent": "leave_message", "to": None, "text": "I stopped by"}, "friend", "room", "private",
-            make_ctx(speaker_name="Jordan", now="16:00"))
-
-    assert ask(make_ctx, {"intent": "digest"}, "owner", "room", "not_private")["text"] == "Nothing to report."
-
-    text = ask(make_ctx, {"intent": "digest"}, "owner", "room", "private")["text"]
-    assert "Someone called from Reuben's number at 3:05, but it didn't sound like Reuben. They said: call me back." in text
-    assert "Jordan stopped by at 4 and said: I stopped by." in text
-    assert ask(make_ctx, {"intent": "digest"}, "owner", "room", "private")["text"] == "Nothing to report."
+def test_empty_message_asks_what_to_pass_on(make_ctx):
+    reply = ask(make_ctx, {"intent": "leave_message", "to": None, "text": ""}, "friend", "room", "private")
+    assert reply["text"] == "Sure, what would you like me to pass on?"
 
 
 def test_unclear_on_call_offers_the_two_safe_options(make_ctx):

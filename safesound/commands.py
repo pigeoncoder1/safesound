@@ -46,6 +46,9 @@ LEAVE_MESSAGE = [
 DIGEST = re.compile(
     r"\b(?:anything (?:happen|happened|new|i should know)"
     r"|what (?:did i|have i) miss"
+    r"|did i miss (?:anything|something|much)"
+    r"|who (?:called|rang|phoned|was here|has been (?:here|round))"
+    r"|any (?:calls|phone calls)"
     r"|did (?:anyone|anybody) (?:stop|come|drop|pop) (?:by|round|over)"
     r"|did (?:anyone|anybody) (?:call|visit|ask (?:for|about|after) me)"
     r"|(?:any|were there any) (?:visitors|callers)"

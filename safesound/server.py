@@ -9,6 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .activity import deliver_digest, log_interaction
 from .calls import call_status, current_call, effective_relationship, end_call, find_person, start_call, verify_caller
 from .commands import addressed_to_assistant, only_wake_word, understand
 from .config import settings
@@ -53,9 +54,20 @@ async def audio_socket(ws: WebSocket) -> None:
     people = load_people()
     last_sent = None
     intro: Introduction | None = None
+    owner_last_spoke: float | None = None
 
     async def say(text: str) -> None:
         await ws.send_json({"type": "say", "text": text})
+
+    async def welcome_back_digest() -> str | None:
+        if room.state(time.monotonic()) != "private":
+            return None
+        delivered = await asyncio.to_thread(deliver_digest)
+        if delivered is None:
+            return None
+        text, ids = delivered
+        await ws.send_json({"type": "digest_delivered", "ids": ids})
+        return text
 
     async def finish_intro(current: Introduction) -> None:
         line = await asyncio.to_thread(current.finish)
@@ -92,7 +104,7 @@ async def audio_socket(ws: WebSocket) -> None:
             await expire_intro_if_due()
 
     async def handle_segment(segment) -> None:
-        nonlocal intro
+        nonlocal intro, owner_last_spoke
         heard = await asyncio.to_thread(listener.analyse, segment)
         if heard is None:
             return
@@ -128,6 +140,12 @@ async def audio_socket(ws: WebSocket) -> None:
         if not heard["text"]:
             return
 
+        digest_due = False
+        if channel == "room" and speaker["relationship"] == "owner":
+            now = time.monotonic()
+            digest_due = owner_last_spoke is None or now - owner_last_spoke >= settings.digest_away_minutes * 60
+            owner_last_spoke = now
+
         async def send_transcript(path: str) -> None:
             await ws.send_json({
                 "type": "transcript",
@@ -153,6 +171,8 @@ async def audio_socket(ws: WebSocket) -> None:
         await send_transcript(path)
 
         if path == "unclear" and (only_wake_word(heard["text"]) or (channel == "room" and not addressed_to_assistant(heard["text"]))):
+            if digest_due and (summary := await welcome_back_digest()):
+                await say(f"Welcome back. {summary}")
             return
         await ws.send_json({"type": "command", "channel": channel, "speaker": speaker["label"], **command})
 
@@ -174,8 +194,31 @@ async def audio_socket(ws: WebSocket) -> None:
             owner=owner_name(people),
         )
         answer = await asyncio.to_thread(respond, command, speaker["relationship"], channel, room.state(time.monotonic()), ctx)
-        await say(answer["text"])
+        text = answer["text"]
+        if command["intent"] == "digest" and speaker["relationship"] == "owner" and answer["disclosed"]:
+            await ws.send_json({"type": "digest_delivered", "ids": answer["disclosed"]})
+        elif digest_due and (summary := await welcome_back_digest()):
+            text = f"{text} Also, while you were away: {summary}"
+        await say(text)
         await ws.send_json({"type": "disclosure", "disclosed": answer["disclosed"], "withheld": answer["withheld"]})
+
+        if speaker["relationship"] != "owner":
+            entry = await asyncio.to_thread(
+                log_interaction,
+                channel=channel,
+                session=f"call-{call.started_at}" if call else None,
+                caller_id=call.caller_id if call else None,
+                voice=speaker["label"],
+                name=speaker["name"],
+                relationship=speaker["relationship"],
+                verification=verification,
+                heard=heard["text"],
+                intent=command["intent"],
+                earshot_said=answer["text"],
+                disclosed=answer["disclosed"],
+                message_left=(command.get("text") or None) if command["intent"] == "leave_message" else None,
+            )
+            await ws.send_json({"type": "activity", "entry": entry})
 
     await push_room_if_changed()
     await ws.send_json(call_status(people))

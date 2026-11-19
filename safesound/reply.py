@@ -1,15 +1,15 @@
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
+from .activity import ACTIVITY_FILE, deliver_digest, load_activity, undelivered
+from .clock import now_hhmm, spoken_time, to_minutes
 from .people import load_people, owner_name
 from .policy import allowed, visible_messages
 
 ROOT = Path(__file__).resolve().parent.parent
 WORLD_FILE = ROOT / "data" / "world.json"
-LEFT_MESSAGES_FILE = ROOT / "data" / "left_messages.json"
 
 NOT_SURE = "I'm not sure, sorry."
 CALL_DEFLECT = "{owner} can't take your call right now. Can I take a message?"
@@ -44,7 +44,8 @@ class Context:
     now: str | None = None
     world: dict | None = None
     owner: str | None = None
-    left_messages_file: Path = field(default=LEFT_MESSAGES_FILE)
+    activity_file: Path = field(default=ACTIVITY_FILE)
+    use_llm: bool = True
 
     def __post_init__(self):
         if self.world is None:
@@ -52,22 +53,11 @@ class Context:
         if self.owner is None:
             self.owner = owner_name(load_people()) or "the owner"
         if self.now is None:
-            self.now = datetime.now().strftime("%H:%M")
+            self.now = now_hhmm()
 
 
 def result(text: str, disclosed: list[str] | None = None, withheld: list[str] | None = None) -> dict:
     return {"text": text, "disclosed": disclosed or [], "withheld": withheld or []}
-
-
-def to_minutes(hhmm: str) -> int:
-    hours, mins = hhmm.split(":")
-    return int(hours) * 60 + int(mins)
-
-
-def spoken_time(hhmm: str) -> str:
-    hours, mins = (int(x) for x in hhmm.split(":"))
-    hour12 = hours % 12 or 12
-    return f"{hour12}" if mins == 0 else f"{hour12}:{mins:02d}"
 
 
 def parse_clock(text: str) -> str | None:
@@ -211,70 +201,32 @@ def read_messages(args: dict, relationship: str, channel: str, room_state: str, 
     return result(f"{count} {bodies} {MESSAGES_END}", disclosed=shown_ids, withheld=withheld)
 
 
-def load_left_messages(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_left_messages(path: Path, messages: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(messages, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
 def leave_message(args: dict, relationship: str, channel: str, room_state: str, ctx: Context | None = None) -> dict:
     ctx = ctx or Context()
     text = (args.get("text") or "").strip()
     if not text:
         return result("Sure, what would you like me to pass on?")
 
-    stored = load_left_messages(ctx.left_messages_file)
-    stored.append({
-        "id": f"left-{len(stored) + 1}",
-        "time": ctx.now,
-        "text": text,
-        "to": args.get("to"),
-        "from": ctx.speaker_name if relationship != "unknown" else None,
-        "voice": ctx.speaker_label,
-        "relationship": relationship,
-        "channel": channel,
-        "caller_id": ctx.caller_id,
-        "verification": ctx.verification,
-    })
-    save_left_messages(ctx.left_messages_file, stored)
-
     if channel == "call" and relationship in ("friend", "partner") and ctx.speaker_name:
-        return result(f"Thanks {ctx.speaker_name}, {PASS_ON[0].lower()}{PASS_ON[1:]}")
+        return result(f"Thanks {ctx.speaker_name}, {PASS_ON}")
     return result(PASS_ON)
-
-
-def describe_left_message(m: dict) -> str:
-    said = f"said: {m['text'].rstrip('.')}."
-    if m["channel"] == "call":
-        if m["verification"] == "verified":
-            return f"{m['from']} called at {spoken_time(m['time'])} and {said}"
-        if m["verification"] == "mismatch":
-            return (f"Someone called from {m['caller_id']}'s number at {spoken_time(m['time'])}, "
-                    f"but it didn't sound like {m['caller_id']}. They {said}")
-        return f"Someone called from an unknown number at {spoken_time(m['time'])} and {said}"
-    if m["from"]:
-        return f"{m['from']} stopped by at {spoken_time(m['time'])} and {said}"
-    return f"Someone I didn't recognise stopped by at {spoken_time(m['time'])} and {said}"
 
 
 def digest(args: dict, relationship: str, channel: str, room_state: str, ctx: Context | None = None) -> dict:
     ctx = ctx or Context()
-    stored = load_left_messages(ctx.left_messages_file)
-    ids = [m["id"] for m in stored]
+    ids = [e["id"] for e in undelivered(load_activity(ctx.activity_file))]
     if is_stranger_on_call(relationship, channel):
         return deflect_call(ctx, ids)
     if relationship != "owner":
         return for_channel(result(f"Sorry, I can only do that for {ctx.owner}.", withheld=ids), relationship, channel, ctx)
-    if room_state != "private" or not stored:
+    if room_state != "private":
         return result(NOTHING_TO_REPORT, withheld=ids)
 
-    save_left_messages(ctx.left_messages_file, [])
-    return result(" ".join(describe_left_message(m) for m in stored), disclosed=ids)
+    delivered = deliver_digest(ctx.activity_file, ctx.use_llm)
+    if delivered is None:
+        return result(NOTHING_TO_REPORT)
+    text, ids = delivered
+    return result(text, disclosed=ids)
 
 
 def introduce(args: dict, relationship: str, channel: str, room_state: str, ctx: Context | None = None) -> dict:

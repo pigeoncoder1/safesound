@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     unknown_chunks_to_flip: int = 2
     room_cooldown_seconds: int = 180
 
+    digest_away_minutes: float = 1.0
+
     host: str = "127.0.0.1"
     port: int = 8000
 

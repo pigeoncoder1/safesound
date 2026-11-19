@@ -168,6 +168,17 @@
         addLog(`🔊 safesound: "${e.text}"`, "say");
         if (session) speak(e.text, session.ws);
       }
+      else if (e.type === "activity") {
+        const a = e.entry;
+        const who = a.channel === "call"
+          ? `📞 ${a.caller_id ?? "no caller ID"} (${a.verification.replace("_", " ")})`
+          : (a.name ?? "unrecognised voice");
+        const msg = a.message_left ? `  · message: "${a.message_left}"` : "";
+        addLog(`📝 logged for owner: ${who} → ${a.intent}${msg}`, a.verification === "mismatch" ? "unknown" : "muted");
+      }
+      else if (e.type === "digest_delivered") {
+        addLog(`📬 told owner about ${e.ids.length} logged interaction${e.ids.length === 1 ? "" : "s"}`, "known");
+      }
       else if (e.type === "introduction") {
         const who = e.relationship ? `${e.name} (${e.relationship === "partner" ? "family/partner" : e.relationship})` : e.name;
         const text = {
