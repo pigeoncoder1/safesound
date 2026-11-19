@@ -15,6 +15,7 @@
     .muted { color: #888; }
     .transcript { color: #0550ae; }
     .command { color: #8250df; font-weight: bold; }
+    .say { color: #1f2328; font-weight: bold; }
     #room { margin: 1rem 0; padding: 0.8rem 1rem; border-radius: 8px; background: #f3f3f3; }
     #room.private { background: #dafbe1; }
     #room.not_private { background: #ffebe9; }
@@ -156,12 +157,22 @@
       }
       else if (e.type === "transcript") {
         const who = e.name ? `${e.name} (${e.relationship})` : e.relationship;
-        addLog(`${e.channel === "call" ? "📞 " : ""}${who}: "${e.text}"`, "transcript");
+        addLog(`${e.channel === "call" ? "📞 " : ""}${who}: "${e.text}"  [${e.path}]`, "transcript");
       }
       else if (e.type === "command") {
-        const { type, intent, speaker, level, reason, channel, ...args } = e;
+        const { type, intent, speaker, channel, ...args } = e;
         const shown = Object.entries(args).filter(([, v]) => v !== null).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
-        addLog(`→ ${intent}${shown ? " " + shown : ""}  ⇒ ${level}${reason ? ` (${reason})` : ""}`, "command");
+        addLog(`→ ${intent}${shown ? " " + shown : ""}`, "command");
+      }
+      else if (e.type === "say") {
+        addLog(`🔊 safesound: "${e.text}"`, "say");
+        if (session) speak(e.text, session.ws);
+      }
+      else if (e.type === "disclosure") {
+        const parts = [];
+        if (e.disclosed.length) parts.push(`disclosed: ${e.disclosed.join(", ")}`);
+        if (e.withheld.length) parts.push(`withheld: ${e.withheld.join(", ")}`);
+        if (parts.length) addLog(parts.join("  ·  "), "muted");
       }
       else if (e.type === "tts_start") addLog("assistant speaking: mic ignored", "muted");
       else if (e.type === "tts_end") addLog("assistant finished: listening again", "muted");

@@ -4,6 +4,7 @@ from silero_vad import VADIterator, load_silero_vad
 
 from .config import settings
 from .speaker import SAMPLE_RATE, identify, load_voices
+from .people import load_people
 from .stt import transcribe
 
 VAD_WINDOW = 512
@@ -16,6 +17,7 @@ class Listener:
     def __init__(self):
         self.vad = VADIterator(load_silero_vad(), sampling_rate=SAMPLE_RATE, min_silence_duration_ms=MIN_SILENCE_MS)
         self.voices = load_voices()
+        self.names = [p["name"] for p in load_people()]
         self.pending = np.zeros(0, dtype=np.float32)
         self.segment: list[np.ndarray] | None = None
         self.muted = False
@@ -63,5 +65,5 @@ class Listener:
             "score": round(score, 3),
             "seconds": seconds,
             "reliable": seconds >= settings.min_chunk_seconds,
-            "text": transcribe(segment),
+            "text": transcribe(segment, self.names),
         }

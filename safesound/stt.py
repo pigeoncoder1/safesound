@@ -19,13 +19,14 @@ def load_model():
     return _model
 
 
-def transcribe(audio: np.ndarray) -> str:
+def transcribe(audio: np.ndarray, names: list[str] | None = None) -> str:
     segments, _ = load_model().transcribe(
         audio.astype(np.float32),
         language="en",
         beam_size=1,
         condition_on_previous_text=False,
         vad_filter=False,
+        hotwords=" ".join(["Safesound", *(names or [])]),
     )
     words = [s.text.strip() for s in segments if s.no_speech_prob < NO_SPEECH_CUTOFF]
     return " ".join(w for w in words if w).strip()

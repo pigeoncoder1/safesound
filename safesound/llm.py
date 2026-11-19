@@ -23,7 +23,8 @@ def complete(system: str, user: str, max_tokens: int = 300) -> str | None:
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
-            return msg.content[0].text.strip()
+            text = "".join(block.text for block in msg.content if block.type == "text").strip()
+            return text or None
 
         if PROVIDER == "ollama":
             r = httpx.post(

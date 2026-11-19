@@ -9,12 +9,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .calls import call_status, current_call, effective_relationship, end_call, start_call
-from .commands import parse_command
+from .calls import call_status, current_call, effective_relationship, end_call, find_person, start_call, verify_caller
+from .commands import addressed_to_assistant, understand
 from .config import settings
-from .handlers import route
 from .listener import Listener
 from .people import load_people, lookup, owner_name
+from .reply import Context, respond
 from .room import RoomState
 from .speaker import load_model as load_speaker_model
 from .stt import load_model as load_whisper_model
@@ -79,10 +79,12 @@ async def audio_socket(ws: WebSocket) -> None:
             call.voice_labels.append(heard["label"])
             if call_status(people) != before:
                 await ws.send_json(call_status(people))
+            verification = verify_caller(call.caller_id, heard["label"], people)
             relationship = effective_relationship(call.caller_id, heard["label"], people)
-            name = call.caller_id if relationship != "unknown" else None
+            name = find_person(call.caller_id, people)["name"] if verification == "verified" else None
             speaker = {"label": heard["label"], "name": name, "relationship": relationship}
         else:
+            verification = "in_person"
             if heard["reliable"]:
                 room.observe(heard["label"], time.monotonic())
                 await push_room_if_changed()
@@ -90,6 +92,8 @@ async def audio_socket(ws: WebSocket) -> None:
 
         if not heard["text"]:
             return
+        known_names = [p["name"] for p in people]
+        command, path = await asyncio.to_thread(understand, heard["text"], known_names)
         await ws.send_json({
             "type": "transcript",
             "channel": channel,
@@ -97,12 +101,23 @@ async def audio_socket(ws: WebSocket) -> None:
             "name": speaker["name"],
             "relationship": speaker["relationship"],
             "text": heard["text"],
+            "path": path,
         })
 
-        command = parse_command(heard["text"])
-        if command:
-            decision = route(command, speaker, room.state(time.monotonic()), owner_name(people))
-            await ws.send_json({**decision, "channel": channel})
+        if path == "unclear" and channel == "room" and not addressed_to_assistant(heard["text"]):
+            return
+        await ws.send_json({"type": "command", "channel": channel, "speaker": speaker["label"], **command})
+
+        ctx = Context(
+            speaker_name=speaker["name"],
+            speaker_label=speaker["label"],
+            caller_id=call.caller_id if call else None,
+            verification=verification,
+            owner=owner_name(people),
+        )
+        answer = await asyncio.to_thread(respond, command, speaker["relationship"], channel, room.state(time.monotonic()), ctx)
+        await ws.send_json({"type": "say", "text": answer["text"]})
+        await ws.send_json({"type": "disclosure", "disclosed": answer["disclosed"], "withheld": answer["withheld"]})
 
     await push_room_if_changed()
     await ws.send_json(call_status(people))
