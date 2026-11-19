@@ -13,11 +13,20 @@
     .known { color: #1a7f37; }
     .unknown { color: #cf222e; font-weight: bold; }
     .muted { color: #888; }
+    .transcript { color: #0550ae; }
+    .command { color: #8250df; font-weight: bold; }
     #room { margin: 1rem 0; padding: 0.8rem 1rem; border-radius: 8px; background: #f3f3f3; }
     #room.private { background: #dafbe1; }
     #room.not_private { background: #ffebe9; }
     #room-state { font-size: 1.3rem; font-weight: bold; }
     #room-details { margin-top: 0.3rem; font-size: 0.9rem; color: #333; }
+    #call { margin: 1rem 0; padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid #ddd; }
+    #call.active { border-color: #0969da; background: #ddf4ff; }
+    #call input { font-size: 1rem; padding: 0.4rem; width: 10rem; margin-right: 0.5rem; }
+    #call-state { margin-top: 0.5rem; font-size: 0.95rem; }
+    .verified { color: #1a7f37; font-weight: bold; }
+    .mismatch, .unknown_number { color: #cf222e; font-weight: bold; }
+    .pending { color: #9a6700; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -29,6 +38,13 @@
   <div id="room">
     <div id="room-state">Room: not listening</div>
     <div id="room-details"></div>
+  </div>
+  <div id="call">
+    <strong>Simulated phone call</strong><br>
+    <input id="caller-id" placeholder="Caller ID (blank = none)">
+    <button id="call-start" disabled>Start call</button>
+    <button id="call-end" disabled>End call</button>
+    <div id="call-state">No call.</div>
   </div>
   <ul id="log"></ul>
 
@@ -43,6 +59,47 @@
     const log = document.getElementById("log");
     let session = null;
     let room = null;
+    let callActive = false;
+
+    const callBox = document.getElementById("call");
+    const callerIdInput = document.getElementById("caller-id");
+    const callStartBtn = document.getElementById("call-start");
+    const callEndBtn = document.getElementById("call-end");
+    const callState = document.getElementById("call-state");
+
+    const VERIFICATION_TEXT = {
+      pending: "waiting for the caller to speak",
+      verified: "verified: voice matches the number",
+      mismatch: "MISMATCH: voice does not match the number",
+      unknown_number: "unknown number: treated as a stranger",
+    };
+
+    function renderCall(e) {
+      callActive = e.active;
+      callBox.className = e.active ? "active" : "";
+      callStartBtn.disabled = !session || e.active;
+      callEndBtn.disabled = !session || !e.active;
+      callerIdInput.disabled = e.active;
+      if (!e.active) {
+        callState.textContent = "No call.";
+        return;
+      }
+      const number = e.caller_id ?? "no caller ID";
+      const voice = e.voice ?? "not heard yet";
+      callState.innerHTML = "";
+      callState.append(`Caller ID: ${number} · Voice: ${voice} · `);
+      const badge = document.createElement("span");
+      badge.className = e.verification;
+      badge.textContent = VERIFICATION_TEXT[e.verification] ?? e.verification;
+      callState.append(badge);
+    }
+
+    function sendJson(obj) {
+      if (session && session.ws.readyState === WebSocket.OPEN) session.ws.send(JSON.stringify(obj));
+    }
+
+    callStartBtn.onclick = () => sendJson({ type: "call_start", caller_id: callerIdInput.value.trim() || null });
+    callEndBtn.onclick = () => sendJson({ type: "call_end" });
     let roomReceivedAt = 0;
 
     const roomBox = document.getElementById("room");
@@ -77,15 +134,35 @@
 
     function onEvent(e) {
       if (e.type === "connected") status.textContent = `Listening (mic at ${e.sampleRate} Hz, sent at 16000 Hz).`;
-      else if (e.type === "closed") { status.textContent = "Disconnected."; room = null; renderRoom(); }
+      else if (e.type === "closed") {
+        status.textContent = "Disconnected.";
+        room = null;
+        renderRoom();
+        renderCall({ active: false });
+      }
+      else if (e.type === "call") {
+        if (e.active !== callActive) addLog(e.active ? `📞 call started (caller ID: ${e.caller_id ?? "none"})` : "📞 call ended", "muted");
+        renderCall(e);
+      }
       else if (e.type === "room") {
         if (room && room.state !== e.state) addLog(`room is now ${e.state.replace("_", " ")}`, e.state === "private" ? "known" : "unknown");
         room = e;
         roomReceivedAt = Date.now();
         renderRoom();
       }
-      else if (e.type === "voice") addLog(`${e.label}  score ${e.score.toFixed(3)}  (${e.seconds}s)`, e.label === "unknown" ? "unknown" : "known");
-      else if (e.type === "short") addLog(`ignored ${e.seconds}s of speech (too short)`, "muted");
+      else if (e.type === "voice") {
+        const note = e.reliable ? "" : "  (short: not used for room)";
+        addLog(`${e.label}  score ${e.score.toFixed(3)}  (${e.seconds}s)${note}`, e.label === "unknown" ? "unknown" : "known");
+      }
+      else if (e.type === "transcript") {
+        const who = e.name ? `${e.name} (${e.relationship})` : e.relationship;
+        addLog(`${e.channel === "call" ? "📞 " : ""}${who}: "${e.text}"`, "transcript");
+      }
+      else if (e.type === "command") {
+        const { type, intent, speaker, level, reason, channel, ...args } = e;
+        const shown = Object.entries(args).filter(([, v]) => v !== null).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+        addLog(`→ ${intent}${shown ? " " + shown : ""}  ⇒ ${level}${reason ? ` (${reason})` : ""}`, "command");
+      }
       else if (e.type === "tts_start") addLog("assistant speaking: mic ignored", "muted");
       else if (e.type === "tts_end") addLog("assistant finished: listening again", "muted");
     }

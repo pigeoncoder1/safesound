@@ -4,8 +4,10 @@ from silero_vad import VADIterator, load_silero_vad
 
 from .config import settings
 from .speaker import SAMPLE_RATE, identify, load_voices
+from .stt import transcribe
 
 VAD_WINDOW = 512
+MIN_SPEECH_SECONDS = 0.5
 MIN_SILENCE_MS = 300
 MAX_SEGMENT_SECONDS = 8.0
 
@@ -51,9 +53,15 @@ class Listener:
                 self.segment = []
         return finished
 
-    def classify(self, segment: np.ndarray) -> dict:
+    def analyse(self, segment: np.ndarray) -> dict | None:
         seconds = round(len(segment) / SAMPLE_RATE, 2)
-        if seconds < settings.min_chunk_seconds:
-            return {"type": "short", "seconds": seconds}
+        if seconds < MIN_SPEECH_SECONDS:
+            return None
         label, score = identify(segment, self.voices, settings.match_threshold)
-        return {"type": "voice", "label": label, "score": round(score, 3), "seconds": seconds}
+        return {
+            "label": label,
+            "score": round(score, 3),
+            "seconds": seconds,
+            "reliable": seconds >= settings.min_chunk_seconds,
+            "text": transcribe(segment),
+        }
