@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from . import llm
 from .activity import clear_activity, deliver_digest, load_activity, log_interaction, mark_delivered
 from .calls import call_status, current_call, effective_relationship, end_call, find_person, start_call, verify_caller
-from .commands import addressed_to_assistant, is_fragment, only_wake_word, understand
+from .commands import addressed_to_assistant, is_echo, is_fragment, only_wake_word, understand
 from .config import settings
 from .demo import (
     DEMO_DIR, DEMO_NAMES, FRAME_SAMPLES, PAUSE_BETWEEN_LINES, PAUSE_BETWEEN_SCENES, SCENES, call_ends_after,
@@ -42,6 +42,20 @@ TTS_MAX_SECONDS = 90.0
 
 log = logging.getLogger("safesound.server")
 people_changes = {"version": 0}
+live_connections = {"count": 0}
+ECHO_WINDOW_SECONDS = 20.0
+SPOKEN_WORDS_PER_SECOND = 2.5
+SPEECH_MARGIN_SECONDS = 1.5
+
+
+def speaking_seconds(text: str) -> float:
+    return len(text.split()) / SPOKEN_WORDS_PER_SECOND + SPEECH_MARGIN_SECONDS
+
+
+RECHECK_INTENTS = {"where_is", "is_free", "read_messages", "digest"}
+SAY_AGAIN = "Sorry, I didn't quite catch that. Could you say it again in a full sentence?"
+SECOND_CONNECTION_NOTICE = ("Another safesound page or tab is already listening, so everything may be heard twice. "
+                            "Close the other tab or press Stop mic there.")
 
 
 def people_changed() -> None:
@@ -56,12 +70,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="safesound", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")
@@ -141,12 +162,16 @@ def delete_activity() -> dict:
 @app.websocket("/ws")
 async def audio_socket(ws: WebSocket) -> None:
     await ws.accept()
+    live_connections["count"] += 1
+    if live_connections["count"] > 1:
+        await ws.send_json({"type": "notice", "message": SECOND_CONNECTION_NOTICE})
     listener = Listener(extra_names=DEMO_NAMES if settings.demo_mode else None)
     room = RoomState()
     people = load_people()
     last_sent = None
     intro: Introduction | None = None
     owner_last_spoke: float | None = None
+    digest_waiting = False
     demo_task: asyncio.Task | None = None
     owner_setup: OwnerSetup | None = None
     people_seen = people_changes["version"]
@@ -154,9 +179,15 @@ async def audio_socket(ws: WebSocket) -> None:
     tts_started = asyncio.Event()
     tts_finished = asyncio.Event()
 
+    recent_says: list[tuple[float, str]] = []
+
     async def say(text: str) -> None:
         nonlocal says
         says += 1
+        now = time.monotonic()
+        duration = speaking_seconds(text)
+        listener.stay_quiet_for(duration)
+        recent_says[:] = [(until, said) for until, said in recent_says if now < until] + [(now + duration + ECHO_WINDOW_SECONDS, text)]
         tts_started.clear()
         tts_finished.clear()
         await ws.send_json({"type": "say", "text": text})
@@ -201,6 +232,18 @@ async def audio_socket(ws: WebSocket) -> None:
             await ws.send_json(current.status())
             await say(line)
 
+    def listeners_except(label: str) -> list[dict]:
+        found = []
+        for voice in room.voices_present(time.monotonic()):
+            if voice["label"] in ("unknown", label):
+                continue
+            info = lookup(voice["label"], people)
+            if info["relationship"] in ("owner", "unknown"):
+                continue
+            found.append({"name": info["name"], "relationship": info["relationship"],
+                          "permissions": permissions_of(voice["label"], people)})
+        return found
+
     async def push_room_if_changed() -> None:
         nonlocal last_sent
         now = time.monotonic()
@@ -216,7 +259,7 @@ async def audio_socket(ws: WebSocket) -> None:
             await expire_intro_if_due()
 
     async def handle_segment(segment) -> None:
-        nonlocal intro, owner_last_spoke, people_seen
+        nonlocal intro, owner_last_spoke, people_seen, digest_waiting
         if people_seen != people_changes["version"]:
             people_seen = people_changes["version"]
             listener.reload_people()
@@ -239,9 +282,16 @@ async def audio_socket(ws: WebSocket) -> None:
 
         heard["text"] = await asyncio.to_thread(listener.transcribe, segment)
 
+        now = time.monotonic()
+        if is_echo(heard["text"], [said for until, said in recent_says if now < until]):
+            await ws.send_json({"type": "transcript", "channel": channel, "speaker": "safesound", "name": "safesound",
+                                "relationship": "echo", "text": heard["text"], "path": "echo"})
+            return
+
         if call:
             before = call_status(people)
-            call.voice_labels.append(heard["label"])
+            if heard["reliable"] or heard["label"] != "unknown":
+                call.voice_labels.append(heard["label"])
             if call_status(people) != before:
                 await ws.send_json(call_status(people))
             verification = verify_caller(call.caller_id, heard["label"], people)
@@ -260,11 +310,13 @@ async def audio_socket(ws: WebSocket) -> None:
         if not heard["text"]:
             return
 
-        digest_due = False
-        if channel == "room" and speaker["relationship"] == "owner":
+        owner_in_room = channel == "room" and speaker["relationship"] == "owner"
+        if owner_in_room:
             now = time.monotonic()
-            digest_due = owner_last_spoke is None or now - owner_last_spoke >= settings.digest_away_minutes * 60
+            if owner_last_spoke is None or now - owner_last_spoke >= settings.digest_away_minutes * 60:
+                digest_waiting = True
             owner_last_spoke = now
+        digest_due = owner_in_room and digest_waiting
 
         async def send_transcript(path: str) -> None:
             await ws.send_json({
@@ -288,13 +340,12 @@ async def audio_socket(ws: WebSocket) -> None:
 
         known_names = [p["name"] for p in people]
         command, path = await asyncio.to_thread(understand, heard["text"], known_names)
-        ignored = path == "unclear" and (only_wake_word(heard["text"]) or is_fragment(heard["text"])
-                                         or (channel == "room" and not addressed_to_assistant(heard["text"])))
+        unaddressed = channel == "room" and not addressed_to_assistant(heard["text"])
+        ignored = (path == "unclear" and (only_wake_word(heard["text"]) or is_fragment(heard["text"]) or unaddressed)) \
+            or (path == "llm" and is_fragment(heard["text"]) and unaddressed)
         await send_transcript("ignored" if ignored else path)
 
         if ignored:
-            if digest_due and (summary := await welcome_back_digest()):
-                await say(f"Welcome back. {summary}")
             return
         await ws.send_json({"type": "command", "channel": channel, "speaker": speaker["label"], **command})
 
@@ -308,6 +359,10 @@ async def audio_socket(ws: WebSocket) -> None:
             await say(intro.opening_line())
             return
 
+        if heard["label"] == "unknown" and not heard["reliable"] and command["intent"] in RECHECK_INTENTS:
+            await say(SAY_AGAIN)
+            return
+
         ctx = Context(
             speaker_name=speaker["name"],
             speaker_label=speaker["label"],
@@ -315,13 +370,18 @@ async def audio_socket(ws: WebSocket) -> None:
             verification=verification,
             owner=owner_name(people),
             permissions=speaker.get("permissions"),
+            listeners=listeners_except(speaker["label"]),
         )
         answer = await asyncio.to_thread(respond, command, speaker["relationship"], channel, room.state(time.monotonic()), ctx)
         text = answer["text"]
-        if command["intent"] == "digest" and speaker["relationship"] == "owner" and answer["disclosed"]:
-            await ws.send_json({"type": "digest_delivered", "ids": answer["disclosed"]})
-        elif digest_due and (summary := await welcome_back_digest()):
-            text = f"{text} Also, while you were away: {summary}"
+        if command["intent"] == "digest" and speaker["relationship"] == "owner":
+            digest_waiting = False
+            if answer["disclosed"]:
+                await ws.send_json({"type": "digest_delivered", "ids": answer["disclosed"]})
+        elif digest_due and room.state(time.monotonic()) == "private":
+            digest_waiting = False
+            if summary := await welcome_back_digest():
+                text = f"{text} Also, while you were away: {summary}"
         await say(text)
         await ws.send_json({
             "type": "disclosure",
@@ -332,6 +392,7 @@ async def audio_socket(ws: WebSocket) -> None:
             "disclosed": answer["disclosed"],
             "rough": answer["rough"],
             "withheld": answer["withheld"],
+            "listeners": [listener["name"] for listener in ctx.listeners],
         })
 
         if speaker["relationship"] != "owner":
@@ -349,6 +410,7 @@ async def audio_socket(ws: WebSocket) -> None:
                 earshot_said=answer["text"],
                 disclosed=answer["disclosed"],
                 message_left=(command.get("text") or None) if command["intent"] == "leave_message" else None,
+                reliable=heard["reliable"],
             )
             await ws.send_json({"type": "activity", "entry": entry})
 
@@ -478,6 +540,7 @@ async def audio_socket(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        live_connections["count"] -= 1
         ticker.cancel()
         if demo_task:
             demo_task.cancel()

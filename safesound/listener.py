@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import torch
 from silero_vad import VADIterator, load_silero_vad
@@ -22,6 +24,7 @@ class Listener:
         self.pending = np.zeros(0, dtype=np.float32)
         self.segment: list[np.ndarray] | None = None
         self.muted = False
+        self.quiet_until = 0.0
 
     def reload_people(self) -> None:
         self.voices = load_voices()
@@ -36,8 +39,15 @@ class Listener:
     def unmute(self) -> None:
         self.muted = False
 
+    def stay_quiet_for(self, seconds: float) -> None:
+        if self.quiet_until <= time.monotonic():
+            self.pending = np.zeros(0, dtype=np.float32)
+            self.segment = None
+            self.vad.reset_states()
+        self.quiet_until = max(self.quiet_until, time.monotonic() + seconds)
+
     def feed(self, pcm16: bytes) -> list[np.ndarray]:
-        if self.muted:
+        if self.muted or time.monotonic() < self.quiet_until:
             return []
         samples = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
         self.pending = np.concatenate([self.pending, samples])

@@ -1,7 +1,7 @@
 PERMISSIONS = {
     "owner":   {"messages": "full", "location": "full",  "calendar": "full"},
-    "partner": {"messages": "none", "location": "full",  "calendar": "full"},
-    "friend":  {"messages": "none", "location": "rough", "calendar": "rough"},
+    "partner": {"messages": "full", "location": "full",  "calendar": "full"},
+    "friend":  {"messages": "rough", "location": "rough", "calendar": "rough"},
     "unknown": {"messages": "none", "location": "none",  "calendar": "none"},
 }
 
@@ -36,3 +36,20 @@ def visible_messages(inbox: list[dict], level: str) -> list[dict]:
     if level == "rough":
         return [m for m in inbox if not m["sensitive"]]
     return []
+
+
+LEVEL_ORDER = {"none": 0, "rough": 1, "full": 2}
+STRANGER_CAP = "rough"
+
+
+def lowest(*levels: str) -> str:
+    return min(levels, key=LEVEL_ORDER.__getitem__)
+
+
+def listener_cap(info_type: str, listeners: list[dict], room_state: str) -> str:
+    caps = ["full"]
+    if room_state != "private":
+        caps.append(STRANGER_CAP)
+    for listener in listeners:
+        caps.append(permissions_for(listener["relationship"], listener.get("permissions"))[info_type])
+    return lowest(*caps)

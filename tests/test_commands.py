@@ -342,3 +342,19 @@ def test_leave_a_message_and_tell_keeps_only_the_message():
     assert parse_command("Yes, can you please leave a message and tell Richie he's a nice man.") == {
         "intent": "leave_message", "to": "Richie", "text": "he's a nice man",
     }
+
+
+@pytest.mark.parametrize(("heard", "expected"), [
+    ("at high office, London, back around 6.", True),
+    ("and I'm getting over. Got it. I'll remember you Sam.", True),
+    ("Where am I?", False),
+    ("Hello, where am I right now?", False),
+    ("Read my messages please", False),
+])
+def test_is_echo(heard, expected):
+    said = ["You're at Hiya office, London, back around 6.", "Got it, I'll remember you, Sam."]
+    assert commands.is_echo(heard, said) is expected
+
+
+def test_echo_needs_something_recently_said():
+    assert not commands.is_echo("at high office, London, back around 6.", [])

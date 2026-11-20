@@ -32,7 +32,7 @@ def owner_enrolled(voices_dir: Path = VOICES_DIR, people_file: Path = PEOPLE_FIL
 def clean_name(name) -> str | None:
     if not isinstance(name, str):
         return None
-    name = " ".join(name.split())
+    name = " ".join(word[:1].upper() + word[1:] for word in name.split())
     return name if NAME_PATTERN.fullmatch(name) else None
 
 

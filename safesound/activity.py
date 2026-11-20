@@ -39,7 +39,7 @@ def save_activity(entries: list[dict], path: Path = ACTIVITY_FILE) -> None:
 
 def log_interaction(*, channel: str, caller_id: str | None, voice: str, name: str | None, relationship: str,
                     verification: str, heard: str, intent: str, earshot_said: str, disclosed: list[str],
-                    message_left: str | None, session: str | None = None, time: str | None = None,
+                    message_left: str | None, session: str | None = None, time: str | None = None, reliable: bool = True,
                     path: Path = ACTIVITY_FILE) -> dict:
     entries = load_activity(path)
     entry = {
@@ -57,6 +57,7 @@ def log_interaction(*, channel: str, caller_id: str | None, voice: str, name: st
         "earshot_said": earshot_said,
         "disclosed": disclosed,
         "message_left": message_left,
+        "reliable": reliable,
         "delivered": False,
     }
     entries.append(entry)
@@ -82,14 +83,15 @@ def mark_delivered(ids: list[str], path: Path = ACTIVITY_FILE) -> None:
     save_activity(entries, path)
 
 
-def who_and_when(e: dict, also: bool = False) -> str:
+def who_and_when(e: dict, also: bool = False, unconfirmed: bool = False) -> str:
     t = spoken_time(e["time"])
     someone = "Someone also" if also else "Someone"
     if e["channel"] == "call":
         if e["verification"] == "verified":
             return f"{e['name']} called at {t}"
         if e["verification"] == "mismatch":
-            return f"{someone} called from {e['caller_id']}'s number at {t}, but it didn't sound like {e['caller_id']}"
+            doubt = f"I couldn't confirm it was {e['caller_id']}" if unconfirmed else f"it didn't sound like {e['caller_id']}"
+            return f"{someone} called from {e['caller_id']}'s number at {t}, but {doubt}"
         if e["caller_id"]:
             return f"{someone} called at {t} from a number listed as {e['caller_id']} that I don't know"
         return f"{someone} called from an unknown number at {t}"
@@ -134,7 +136,8 @@ def actions_of(group: list[dict]) -> list[str]:
 
 def describe(group: list[dict], also: bool = False) -> str:
     first = group[0]
-    who = who_and_when(first, also)
+    unconfirmed = not any(e.get("reliable", True) for e in group)
+    who = who_and_when(first, also, unconfirmed)
     actions = actions_of(group)
     asked_something = any(e["intent"] in ASKED for e in group)
 

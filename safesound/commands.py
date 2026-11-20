@@ -289,3 +289,28 @@ FRAGMENT_MAX_WORDS = 2
 
 def is_fragment(text: str) -> bool:
     return len(re.findall(r"[A-Za-z0-9']+", text or "")) <= FRAGMENT_MAX_WORDS
+
+
+ECHO_MIN_WORDS = 3
+ECHO_OVERLAP = 0.7
+ECHO_RUN_WORDS = 4
+
+
+def words_of(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", (text or "").lower())
+
+
+def is_echo(text: str, recently_said: list[str]) -> bool:
+    heard = words_of(text)
+    if len(heard) < ECHO_MIN_WORDS:
+        return False
+    for said in recently_said:
+        said_list = words_of(said)
+        if not said_list:
+            continue
+        if sum(word in set(said_list) for word in heard) / len(heard) >= ECHO_OVERLAP:
+            return True
+        run = difflib.SequenceMatcher(None, heard, said_list, autojunk=False).find_longest_match(0, len(heard), 0, len(said_list))
+        if run.size >= ECHO_RUN_WORDS:
+            return True
+    return False

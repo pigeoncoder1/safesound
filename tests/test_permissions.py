@@ -14,8 +14,8 @@ NOTHING = {"messages": "none", "location": "none", "calendar": "none"}
 
 
 def test_defaults_without_overrides():
-    assert permissions_for("friend") == {"messages": "none", "location": "rough", "calendar": "rough"}
-    assert permissions_for("partner") == {"messages": "none", "location": "full", "calendar": "full"}
+    assert permissions_for("friend") == {"messages": "rough", "location": "rough", "calendar": "rough"}
+    assert permissions_for("partner") == {"messages": "full", "location": "full", "calendar": "full"}
 
 
 def test_overrides_apply_to_friends_and_partners():
@@ -54,29 +54,68 @@ def test_friend_with_no_location_hears_nothing():
     assert reply["text"] == "I'm not sure, sorry."
 
 
-def test_friend_allowed_non_sensitive_messages():
-    reply = respond({"intent": "read_messages"}, "friend", "room", "private", ctx(permissions={**NOTHING, "messages": "rough"}))
-    assert reply["text"].startswith("Richie has 3 messages.")
-    assert "482913" not in reply["text"]
-    assert set(reply["withheld"]) == {m["id"] for m in WORLD["inbox"] if m["sensitive"]}
-
-
-def test_friend_with_all_messages_is_capped_when_room_not_private():
-    reply = respond({"intent": "read_messages"}, "friend", "room", "not_private", ctx(permissions=EVERYTHING))
-    assert reply["text"].startswith("Richie has 3 messages.")
-    assert "482913" not in reply["text"]
-
-
-def test_messages_are_never_read_over_the_phone_to_others():
-    reply = respond({"intent": "read_messages"}, "friend", "call", "private",
-                    ctx(permissions=EVERYTHING, speaker_name="Drew", verification="verified"))
-    assert reply["text"] == "Hi Drew, I can only go through Richie's messages in person. Want me to pass anything on?"
+@pytest.mark.parametrize("permissions", [None, EVERYTHING])
+@pytest.mark.parametrize("channel", ["room", "call"])
+def test_only_the_owner_can_ask_for_messages(permissions, channel):
+    reply = respond({"intent": "read_messages"}, "friend", channel, "private",
+                    ctx(permissions=permissions, speaker_name="Sam", verification="verified"))
+    assert "Sorry, I can only do that for Richie." in reply["text"]
     assert reply["disclosed"] == []
 
 
-def test_default_friend_still_refused_messages():
-    reply = respond({"intent": "read_messages"}, "friend", "room", "private", ctx())
-    assert reply["text"] == "Sorry, I can only do that for Richie."
+SAM = {"name": "Sam", "relationship": "friend", "permissions": None}
+EDITH = {"name": "Edith", "relationship": "partner", "permissions": None}
+
+
+def owner_asks(intent, listeners, room_state="private", **args):
+    return respond({"intent": intent, **args}, "owner", "room", room_state, ctx(listeners=listeners))
+
+
+def test_owner_alone_hears_everything():
+    assert owner_asks("read_messages", [])["text"].startswith("You've got 6 messages.")
+
+
+def test_friend_in_room_limits_messages_to_non_sensitive():
+    reply = owner_asks("read_messages", [SAM])
+    assert reply["text"].startswith("You've got 3 messages.")
+    assert "482913" not in reply["text"]
+    assert reply["text"].endswith("Nothing else urgent.")
+
+
+def test_partner_in_room_can_overhear_everything_by_default():
+    assert owner_asks("read_messages", [EDITH])["text"].startswith("You've got 6 messages.")
+
+
+def test_strictest_listener_wins():
+    assert owner_asks("read_messages", [EDITH, SAM])["text"].startswith("You've got 3 messages.")
+
+
+def test_listener_with_no_access_means_nothing_is_read_and_nothing_hinted():
+    reply = owner_asks("read_messages", [{**SAM, "permissions": NOTHING}])
+    assert reply["text"] == "No new messages right now."
+    assert len(reply["withheld"]) == 6
+
+
+def test_listener_settings_can_open_up_messages():
+    assert owner_asks("read_messages", [{**SAM, "permissions": EVERYTHING}])["text"].startswith("You've got 6 messages.")
+
+
+def test_stranger_still_caps_even_trusted_listeners():
+    reply = owner_asks("read_messages", [{**SAM, "permissions": EVERYTHING}], room_state="not_private")
+    assert reply["text"].startswith("You've got 3 messages.")
+
+
+def test_friend_in_room_limits_owner_location():
+    assert owner_asks("where_is", [SAM], person=None)["text"] == "You're at work, back around 6."
+    assert owner_asks("where_is", [EDITH], person=None)["text"] == "You're at Hiya office, London, back around 6."
+
+
+def test_listeners_limit_what_another_person_hears():
+    reply = respond({"intent": "where_is", "person": None}, "partner", "room", "private",
+                    ctx(speaker_name="Edith", listeners=[SAM]))
+    assert reply["text"] == "Richie's at work, back around 6."
+
+
 
 
 @pytest.fixture

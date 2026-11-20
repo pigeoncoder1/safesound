@@ -14,6 +14,7 @@
     <span id="room-badge" class="badge badge-grey">Room: not listening</span>
     <span id="demo-scene" class="scene-label" hidden></span>
     <span class="spacer"></span>
+    <button id="guide-open" class="btn btn-small btn-guide">How to try it</button>
     <button id="manage-open" class="btn btn-small">Manage</button>
     <button id="setup-open" class="btn btn-small" hidden>Set up voice</button>
     <span id="llm-pill" class="pill">LLM: …</span>
@@ -24,9 +25,7 @@
       <div class="panel" id="call-panel">
         <h2>Phone <span class="hint">demo stand-in</span></h2>
         <div class="call-controls">
-          <select id="caller-select" aria-label="Caller ID"></select>
-          <input id="caller-other" type="text" placeholder="Caller ID" hidden>
-          <button id="call-start" class="btn" disabled>Start call</button>
+          <select id="caller-select" aria-label="Caller ID"></select>          <button id="call-start" class="btn" disabled>Start call</button>
           <button id="call-end" class="btn btn-danger" disabled>End call</button>
         </div>
         <div id="call-card" class="call-card" hidden>
@@ -112,8 +111,7 @@
 
       <div class="setup-label">Saved people and what they can hear</div>
       <ul id="manage-people" class="manage-list"></ul>
-      <p class="muted small perm-note">Strangers and callers whose voice doesn't match always get nothing.
-        If an unknown voice is in the room, anything set to full is reduced to rough. Messages are only read in person.</p>
+      <p class="muted small perm-note">Only you can ask for your messages. Each setting is what that person may hear, whether they ask or are just in the room while you ask: replies are limited to the strictest person listening. Strangers and callers whose voice doesn't match get nothing, and their presence limits everything to rough.</p>
 
       <div class="setup-label">Activity log</div>
       <div class="manage-row">
@@ -124,6 +122,16 @@
       <div id="manage-status" class="muted small"></div>
       <div class="setup-actions">
         <button id="manage-close" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guide" class="setup" hidden>
+    <div class="setup-card guide-card">
+      <h1>Trying out safesound</h1>
+      <div id="guide-body"></div>
+      <div class="setup-actions">
+        <button id="guide-close" class="btn btn-primary">Got it</button>
       </div>
     </div>
   </div>

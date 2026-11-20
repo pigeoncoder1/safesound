@@ -218,3 +218,17 @@ def test_separate_calls_are_not_merged(log_file):
     log(log_file, session="call-2", time="16:00")
     text = summarise(load_activity(log_file), use_llm=False)
     assert text.count("Reuben called") == 2
+
+
+def test_short_clip_mismatch_is_reported_as_unconfirmed(log_file):
+    log(log_file, voice="unknown", name=None, relationship="unknown", verification="mismatch", reliable=False)
+    text = summarise(load_activity(log_file), use_llm=False)
+    assert "I couldn't confirm it was Reuben" in text
+    assert "didn't sound like" not in text
+
+
+def test_any_reliable_clip_makes_it_a_real_mismatch(log_file):
+    impostor = {"voice": "unknown", "name": None, "relationship": "unknown", "verification": "mismatch", "session": "c9"}
+    log(log_file, **impostor, reliable=False)
+    log(log_file, **impostor, reliable=True)
+    assert "didn't sound like Reuben" in summarise(load_activity(log_file), use_llm=False)

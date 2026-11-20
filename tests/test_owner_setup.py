@@ -40,6 +40,8 @@ def frames(seconds: float, loud: bool = True) -> list[bytes]:
 @pytest.mark.parametrize(("raw", "expected"), [
     ("Richie", "Richie"),
     ("  Mary   Jane ", "Mary Jane"),
+    ("richie", "Richie"),
+    ("mary jane", "Mary Jane"),
     ("O'Brien", "O'Brien"),
     ("", None),
     ("1234", None),
