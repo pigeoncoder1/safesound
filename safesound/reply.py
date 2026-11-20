@@ -56,8 +56,9 @@ class Context:
             self.now = now_hhmm()
 
 
-def result(text: str, disclosed: list[str] | None = None, withheld: list[str] | None = None) -> dict:
-    return {"text": text, "disclosed": disclosed or [], "withheld": withheld or []}
+def result(text: str, disclosed: list[str] | None = None, withheld: list[str] | None = None,
+           rough: list[str] | None = None) -> dict:
+    return {"text": text, "disclosed": disclosed or [], "rough": rough or [], "withheld": withheld or []}
 
 
 def parse_clock(text: str) -> str | None:
@@ -113,7 +114,7 @@ def where_is(args: dict, relationship: str, channel: str, room_state: str, ctx: 
     if level == "full":
         reply = result(f"{you_are(relationship, ctx)} at {location['exact']}, {back}.", disclosed=["location"])
     elif level == "rough":
-        reply = result(f"{you_are(relationship, ctx)} {location['rough']}, {back}.", withheld=["location"])
+        reply = result(f"{you_are(relationship, ctx)} {location['rough']}, {back}.", rough=["location"])
     else:
         reply = result(NOT_SURE, withheld=["location"])
     return for_channel(reply, relationship, channel, ctx)
@@ -168,7 +169,7 @@ def is_free(args: dict, relationship: str, channel: str, room_state: str, ctx: C
             text = f"{you_are(relationship, ctx)} in {event['title']} until {until}."
             return for_channel(result(text, disclosed=ids), relationship, channel, ctx)
         text = f"{you_are(relationship, ctx)} busy until {until}."
-        return for_channel(result(text, withheld=ids), relationship, channel, ctx)
+        return for_channel(result(text, rough=ids), relationship, channel, ctx)
 
     spans = [f"from {spoken_time(e['start'])} to {spoken_time(e['end'])}" for e in events]
     if level == "full":
@@ -176,7 +177,7 @@ def is_free(args: dict, relationship: str, channel: str, room_state: str, ctx: C
         text = f"{you_have(relationship, ctx)} {items} {phrase}."
         return for_channel(result(text, disclosed=ids), relationship, channel, ctx)
     text = f"{you_are(relationship, ctx)} busy {' and '.join(spans)} {phrase}."
-    return for_channel(result(text, withheld=ids), relationship, channel, ctx)
+    return for_channel(result(text, rough=ids), relationship, channel, ctx)
 
 
 def read_messages(args: dict, relationship: str, channel: str, room_state: str, ctx: Context | None = None) -> dict:

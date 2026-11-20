@@ -312,3 +312,33 @@ def test_misheard_names_are_matched_to_known_people(fake_llm, text, expected):
 ])
 def test_only_wake_word(text, expected):
     assert commands.only_wake_word(text) is expected
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Hard", True),
+    ("Tiaia.", True),
+    ("Hello there!", True),
+    ("Is Richie around?", False),
+    ("So anyway the train was packed", False),
+    ("", True),
+])
+def test_is_fragment(text, expected):
+    assert commands.is_fragment(text) is expected
+
+
+@pytest.mark.parametrize("text", [
+    "Did Drew phone?",
+    "Did he leave any messages?",
+    "Drew Phone Did He Leave Any Messages?",
+    "Did anyone leave a message?",
+    "Has Drew called?",
+    "Has anyone been round?",
+])
+def test_questions_about_callers_are_digest_not_inbox(text):
+    assert parse_command(text) == {"intent": "digest"}
+
+
+def test_leave_a_message_and_tell_keeps_only_the_message():
+    assert parse_command("Yes, can you please leave a message and tell Richie he's a nice man.") == {
+        "intent": "leave_message", "to": "Richie", "text": "he's a nice man",
+    }

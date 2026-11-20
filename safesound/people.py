@@ -31,3 +31,15 @@ def upsert_person(name: str, relationship: str, voice_file: str, path: Path = PE
     people.append({"name": name, "relationship": relationship, "voice_file": voice_file})
     save_people(people, path)
     return people
+
+
+def remove_person(label: str, voices_dir: Path, path: Path = PEOPLE_FILE) -> dict | None:
+    people = load_people(path)
+    match = next((p for p in people if Path(p["voice_file"]).stem == label), None)
+    if match is None or match["relationship"] == "owner":
+        return None
+    save_people([p for p in people if p is not match], path)
+    voice = voices_dir / Path(match["voice_file"]).name
+    if voice.exists():
+        voice.unlink()
+    return match

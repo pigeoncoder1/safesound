@@ -9,22 +9,23 @@ from .stt import transcribe
 
 VAD_WINDOW = 512
 MIN_SPEECH_SECONDS = 0.5
-MIN_SILENCE_MS = 300
+MIN_SILENCE_MS = 500
 MAX_SEGMENT_SECONDS = 8.0
 
 
 class Listener:
-    def __init__(self):
+    def __init__(self, extra_names: list[str] | None = None):
+        self.extra_names = list(extra_names or [])
         self.vad = VADIterator(load_silero_vad(), sampling_rate=SAMPLE_RATE, min_silence_duration_ms=MIN_SILENCE_MS)
         self.voices = load_voices()
-        self.names = [p["name"] for p in load_people()]
+        self.names = [p["name"] for p in load_people()] + self.extra_names
         self.pending = np.zeros(0, dtype=np.float32)
         self.segment: list[np.ndarray] | None = None
         self.muted = False
 
     def reload_people(self) -> None:
         self.voices = load_voices()
-        self.names = [p["name"] for p in load_people()]
+        self.names = [p["name"] for p in load_people()] + self.extra_names
 
     def mute(self) -> None:
         self.muted = True
@@ -69,5 +70,7 @@ class Listener:
             "score": round(score, 3),
             "seconds": seconds,
             "reliable": seconds >= settings.min_chunk_seconds,
-            "text": transcribe(segment, self.names),
         }
+
+    def transcribe(self, segment: np.ndarray) -> str:
+        return transcribe(segment, self.names)

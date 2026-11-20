@@ -64,6 +64,12 @@ def log_interaction(*, channel: str, caller_id: str | None, voice: str, name: st
     return entry
 
 
+def clear_activity(path: Path = ACTIVITY_FILE) -> int:
+    count = len(load_activity(path))
+    save_activity([], path)
+    return count
+
+
 def undelivered(entries: list[dict]) -> list[dict]:
     return [e for e in entries if not e["delivered"]]
 

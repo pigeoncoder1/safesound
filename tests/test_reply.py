@@ -121,7 +121,8 @@ def test_verified_friend_call_is_greeted_by_name(make_ctx):
     reply = ask(make_ctx, {"intent": "where_is", "person": OWNER}, "friend", "call", "private",
                 speaker_name="Reuben", caller_id="Reuben", verification="verified")
     assert reply["text"] == "Hi Reuben, Richie's at work, back around 6. Want me to pass anything on?"
-    assert reply["withheld"] == ["location"]
+    assert reply["rough"] == ["location"]
+    assert reply["disclosed"] == [] and reply["withheld"] == []
 
 
 def test_partner_gets_exact_location_in_private_room(make_ctx):
@@ -147,7 +148,7 @@ def test_mismatch_is_never_mentioned_to_caller(make_ctx):
 def test_friend_gets_free_busy_without_titles(make_ctx):
     reply = ask(make_ctx, {"intent": "is_free", "person": None, "when": "tonight"}, "friend", "room", "private", speaker_name="Reuben")
     assert reply["text"] == "Richie's busy from 6:30 to 7:30 tonight."
-    assert reply["withheld"] == ["cal-4"]
+    assert reply["rough"] == ["cal-4"]
 
 
 def test_owner_gets_event_titles(make_ctx):
@@ -176,7 +177,7 @@ def test_questions_about_other_people_reveal_nothing(make_ctx):
 def test_leave_message_reply(make_ctx):
     reply = ask(make_ctx, {"intent": "leave_message", "to": None, "text": "call me back"}, "unknown", "call", "private",
                 caller_id="Reuben", verification="mismatch")
-    assert reply == {"text": "I'll pass that on.", "disclosed": [], "withheld": []}
+    assert reply == {"text": "I'll pass that on.", "disclosed": [], "rough": [], "withheld": []}
     reply = ask(make_ctx, {"intent": "leave_message", "to": None, "text": "running late"}, "friend", "call", "private",
                 speaker_name="Reuben", caller_id="Reuben", verification="verified")
     assert reply["text"] == "Thanks Reuben, I'll pass that on."
@@ -190,10 +191,10 @@ def test_empty_message_asks_what_to_pass_on(make_ctx):
 def test_unclear_on_call_offers_the_two_safe_options(make_ctx):
     for relationship in ("friend", "unknown"):
         reply = ask(make_ctx, {"intent": "unclear"}, relationship, "call", "private", caller_id="Reuben")
-        assert reply == {"text": "Sorry, did you want to know where Richie is, or leave a message?", "disclosed": [], "withheld": []}
+        assert reply == {"text": "Sorry, did you want to know where Richie is, or leave a message?", "disclosed": [], "rough": [], "withheld": []}
 
 
 def test_unclear_in_room_asks_to_rephrase(make_ctx):
     for relationship in ("owner", "friend", "unknown"):
         reply = ask(make_ctx, {"intent": "unclear"}, relationship, "room", "private")
-        assert reply == {"text": "Sorry, could you say that another way?", "disclosed": [], "withheld": []}
+        assert reply == {"text": "Sorry, could you say that another way?", "disclosed": [], "rough": [], "withheld": []}

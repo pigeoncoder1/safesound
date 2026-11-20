@@ -1,5 +1,6 @@
 import argparse
 import sys
+import textwrap
 import time
 from pathlib import Path
 
@@ -9,19 +10,13 @@ import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from safesound.owner_setup import ENROL_PROMPT
 from safesound.speaker import SAMPLE_RATE, VOICES_DIR, load_wav, voiceprint_from
 
 ROOT = Path(__file__).resolve().parent.parent
 ENROLL_DIR = ROOT / "data" / "enroll"
 
-PROMPT = """\
-The quick brown fox jumps over the lazy dog, but nobody saw it happen.
-On Monday morning I took the early train into the city, bought a coffee
-and a warm blueberry muffin, and watched the rain run down the window.
-My favourite numbers are seven, nineteen and forty-two. Please remind me
-to call the dentist on Thursday, pay the electricity bill, and water the
-plants before the weekend. If anyone asks, I'll be back at half past six,
-probably tired, hungry, and thinking about what to cook for dinner."""
+PROMPT = textwrap.fill(ENROL_PROMPT, width=72)
 
 
 def record(seconds: float) -> np.ndarray:

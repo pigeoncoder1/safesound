@@ -11,4 +11,7 @@ venv/
 data/*
 !data/people.json
 !data/world.json
+!data/demo/
+data/demo/*
+!data/demo/README.md
 CONTEXT.md
