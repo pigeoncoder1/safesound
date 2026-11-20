@@ -11,6 +11,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from . import llm
 from .activity import clear_activity, deliver_digest, load_activity, log_interaction, mark_delivered
@@ -25,7 +26,8 @@ from .introductions import Introduction, problem_with
 from .listener import Listener
 from .owner_setup import ENROL_PROMPT, OwnerSetup, clean_name, owner_enrolled
 from .owner_setup import TARGET_SECONDS as OWNER_SETUP_SECONDS
-from .people import load_people, lookup, owner_name, remove_person
+from .people import load_people, lookup, owner_name, permissions_of, remove_person, update_person
+from .policy import LEVELS, PERMISSIONS, permissions_for
 from .reply import Context, load_world, respond
 from .room import RoomState
 from .speaker import SAMPLE_RATE, VOICES_DIR
@@ -72,7 +74,14 @@ def demo_state() -> dict:
     people = load_people()
     return {
         "owner": owner_name(people),
-        "people": [{"name": p["name"], "relationship": p["relationship"], "label": Path(p["voice_file"]).stem} for p in people],
+        "people": [{
+            "name": p["name"],
+            "relationship": p["relationship"],
+            "label": Path(p["voice_file"]).stem,
+            "permissions": permissions_for(p["relationship"], p.get("permissions")),
+            "custom": "permissions" in p,
+        } for p in people],
+        "permission_defaults": PERMISSIONS,
         "llm": {"on": llm.PROVIDER != "none", "provider": llm.PROVIDER},
         "world": load_world(),
         "activity": load_activity()[-ACTIVITY_SHOWN:],
@@ -101,6 +110,27 @@ def delete_person(label: str) -> dict:
         raise HTTPException(status_code=404, detail="No such person, or that is the owner.")
     people_changed()
     return {"removed": removed["name"]}
+
+
+class PersonChange(BaseModel):
+    relationship: str | None = None
+    permissions: dict[str, str] | None = None
+
+
+@app.patch("/api/people/{label}")
+def change_person(label: str, change: PersonChange) -> dict:
+    if change.relationship is not None and change.relationship not in ("friend", "partner"):
+        raise HTTPException(status_code=422, detail="Relationship must be friend or partner.")
+    if change.permissions is not None:
+        if set(change.permissions) != {"messages", "location", "calendar"} or \
+                not all(level in LEVELS for level in change.permissions.values()):
+            raise HTTPException(status_code=422, detail="Permissions need messages, location and calendar set to none, rough or full.")
+    updated = update_person(label, change.relationship, change.permissions)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="No such person, or that is the owner.")
+    people_changed()
+    return {"name": updated["name"], "relationship": updated["relationship"],
+            "permissions": permissions_for(updated["relationship"], updated.get("permissions"))}
 
 
 @app.delete("/api/activity")
@@ -217,13 +247,15 @@ async def audio_socket(ws: WebSocket) -> None:
             verification = verify_caller(call.caller_id, heard["label"], people)
             relationship = effective_relationship(call.caller_id, heard["label"], people)
             name = find_person(call.caller_id, people)["name"] if verification == "verified" else None
-            speaker = {"label": heard["label"], "name": name, "relationship": relationship}
+            permissions = find_person(call.caller_id, people).get("permissions") if verification == "verified" else None
+            speaker = {"label": heard["label"], "name": name, "relationship": relationship, "permissions": permissions}
         else:
             verification = "in_person"
             if heard["reliable"]:
                 room.observe(heard["label"], time.monotonic())
                 await push_room_if_changed()
-            speaker = {"label": heard["label"], **lookup(heard["label"], people)}
+            speaker = {"label": heard["label"], **lookup(heard["label"], people),
+                       "permissions": permissions_of(heard["label"], people)}
 
         if not heard["text"]:
             return
@@ -282,6 +314,7 @@ async def audio_socket(ws: WebSocket) -> None:
             caller_id=call.caller_id if call else None,
             verification=verification,
             owner=owner_name(people),
+            permissions=speaker.get("permissions"),
         )
         answer = await asyncio.to_thread(respond, command, speaker["relationship"], channel, room.state(time.monotonic()), ctx)
         text = answer["text"]

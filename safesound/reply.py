@@ -46,6 +46,7 @@ class Context:
     owner: str | None = None
     activity_file: Path = field(default=ACTIVITY_FILE)
     use_llm: bool = True
+    permissions: dict | None = None
 
     def __post_init__(self):
         if self.world is None:
@@ -110,7 +111,7 @@ def where_is(args: dict, relationship: str, channel: str, room_state: str, ctx: 
 
     location = ctx.world["location"]
     back = f"back around {spoken_time(location['back_by'])}"
-    level = allowed(relationship, "location", room_state)
+    level = allowed(relationship, "location", room_state, ctx.permissions)
     if level == "full":
         reply = result(f"{you_are(relationship, ctx)} at {location['exact']}, {back}.", disclosed=["location"])
     elif level == "rough":
@@ -149,7 +150,7 @@ def is_free(args: dict, relationship: str, channel: str, room_state: str, ctx: C
     if is_stranger_on_call(relationship, channel):
         return deflect_call(ctx, all_events)
 
-    level = allowed(relationship, "calendar", room_state)
+    level = allowed(relationship, "calendar", room_state, ctx.permissions)
     if level == "none":
         return for_channel(result(NOT_SURE, withheld=all_events), relationship, channel, ctx)
 
@@ -186,18 +187,22 @@ def read_messages(args: dict, relationship: str, channel: str, room_state: str, 
     all_ids = [m["id"] for m in inbox]
     if is_stranger_on_call(relationship, channel):
         return deflect_call(ctx, all_ids)
-    if relationship != "owner":
+    level = allowed(relationship, "messages", room_state, ctx.permissions)
+    is_owner = relationship == "owner"
+    if not is_owner and level == "none":
         return for_channel(result(f"Sorry, I can only do that for {ctx.owner}.", withheld=all_ids), relationship, channel, ctx)
     if channel == "call":
-        return result("I can go through your messages when you're home.", withheld=all_ids)
+        text = "I can go through your messages when you're home." if is_owner else f"I can only go through {ctx.owner}'s messages in person."
+        return for_channel(result(text, withheld=all_ids), relationship, channel, ctx)
 
-    shown = visible_messages(inbox, allowed(relationship, "messages", room_state))
+    shown = visible_messages(inbox, level)
     shown_ids = [m["id"] for m in shown]
     withheld = [i for i in all_ids if i not in shown_ids]
     if not shown:
-        return result(NO_MESSAGES, withheld=withheld)
+        return result(NO_MESSAGES if is_owner else f"No new messages for {ctx.owner} right now.", withheld=withheld)
 
-    count = f"You've got {len(shown)} message{'s' if len(shown) != 1 else ''}."
+    plural = "s" if len(shown) != 1 else ""
+    count = f"You've got {len(shown)} message{plural}." if is_owner else f"{ctx.owner} has {len(shown)} message{plural}."
     bodies = " ".join(f"From {m['from']}: {m['body']}" for m in shown)
     return result(f"{count} {bodies} {MESSAGES_END}", disclosed=shown_ids, withheld=withheld)
 

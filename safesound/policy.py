@@ -7,13 +7,23 @@ PERMISSIONS = {
 
 INFO_TYPES = ("messages", "location", "calendar")
 LEVELS = ("full", "rough", "none")
+CUSTOMISABLE = ("partner", "friend")
 
 
-def allowed(relationship: str, info_type: str, room_state: str) -> str:
+def permissions_for(relationship: str, overrides: dict | None = None) -> dict:
+    levels = dict(PERMISSIONS.get(relationship, PERMISSIONS["unknown"]))
+    if relationship in CUSTOMISABLE and isinstance(overrides, dict):
+        for info_type in INFO_TYPES:
+            if overrides.get(info_type) in LEVELS:
+                levels[info_type] = overrides[info_type]
+    return levels
+
+
+def allowed(relationship: str, info_type: str, room_state: str, overrides: dict | None = None) -> str:
     if info_type not in INFO_TYPES:
         raise ValueError(f"unknown info type: {info_type!r}")
 
-    level = PERMISSIONS.get(relationship, PERMISSIONS["unknown"])[info_type]
+    level = permissions_for(relationship, overrides)[info_type]
 
     if level == "full" and room_state != "private":
         return "rough"

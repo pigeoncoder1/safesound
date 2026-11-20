@@ -311,6 +311,21 @@ h3 {
 }
 .manage-list li:last-child { border-bottom: none; }
 .manage-name { font-weight: 600; }
+.manage-list li.manage-person { display: block; }
+.manage-head { display: flex; align-items: center; gap: 10px; }
+.manage-head .btn { margin-left: auto; }
+.perm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.perm-picker { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.perm-picker select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.perm-note { margin-top: 6px; }
+@media (max-width: 700px) { .perm-grid { grid-template-columns: repeat(2, 1fr); } }
 .manage-row .btn, .manage-list .btn { margin-left: auto; }
 .manage-row span:first-child { flex: 1; }
 

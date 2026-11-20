@@ -127,20 +127,67 @@ function manageStatus(text, cls = "muted small") {
   $("manage-status").className = cls;
 }
 
-function renderManage() {
-  const rows = state.demo.people.map(p => {
-    const li = el("li");
-    li.append(el("span", "manage-name", p.name), chip(p.relationship));
-    if (p.relationship === "owner") {
-      li.append(el("span", "muted small", "you · re-record with “Set up voice”"));
-    } else {
-      const button = el("button", "btn btn-danger btn-small", "Delete");
-      button.onclick = () => deletePerson(p);
-      li.append(button);
-    }
-    return li;
+const PERMISSION_CHOICES = {
+  messages: [["none", "No access"], ["rough", "Non-sensitive only"], ["full", "All messages"]],
+  location: [["none", "No access"], ["rough", "Rough (“at work”)"], ["full", "Exact place"]],
+  calendar: [["none", "No access"], ["rough", "Free / busy only"], ["full", "Full details"]],
+};
+const RELATIONSHIP_CHOICES = [["friend", "Friend"], ["partner", "Family / partner"]];
+
+function picker(labelText, choices, value, onChange) {
+  const label = el("label", "perm-picker");
+  const select = el("select");
+  for (const [optionValue, text] of choices) {
+    select.append(Object.assign(el("option", null, text), { value: optionValue, selected: optionValue === value }));
+  }
+  select.onchange = () => onChange(select.value);
+  label.append(el("span", "perm-label", labelText), select);
+  return label;
+}
+
+async function changePerson(p, change, message) {
+  const response = await fetch(`/api/people/${encodeURIComponent(p.label)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
   });
-  $("manage-people").replaceChildren(...rows);
+  if (!response.ok) {
+    manageStatus(`Couldn't update ${p.name}.`, "setup-error");
+    return;
+  }
+  await loadDemo();
+  renderManage();
+  manageStatus(message, "setup-good");
+}
+
+function personRow(p) {
+  const li = el("li", "manage-person");
+  const head = el("div", "manage-head");
+  head.append(el("span", "manage-name", p.name), chip(p.relationship));
+  if (p.relationship === "owner") {
+    head.append(el("span", "muted small", "you · always full access · re-record with “Set up voice”"));
+    li.append(head);
+    return li;
+  }
+  if (p.custom) head.append(el("span", "chip", "custom"));
+  const remove = el("button", "btn btn-danger btn-small", "Delete");
+  remove.onclick = () => deletePerson(p);
+  head.append(remove);
+
+  const controls = el("div", "perm-grid");
+  controls.append(picker("Relationship", RELATIONSHIP_CHOICES, p.relationship, value =>
+    changePerson(p, { relationship: value }, `${p.name} is now ${value === "partner" ? "family / partner" : "a friend"} (default permissions).`)));
+  for (const infoType of ["messages", "location", "calendar"]) {
+    const title = infoType[0].toUpperCase() + infoType.slice(1);
+    controls.append(picker(title, PERMISSION_CHOICES[infoType], p.permissions[infoType], value =>
+      changePerson(p, { permissions: { ...p.permissions, [infoType]: value } }, `Updated ${p.name}'s ${infoType} access.`)));
+  }
+  li.append(head, controls);
+  return li;
+}
+
+function renderManage() {
+  $("manage-people").replaceChildren(...state.demo.people.map(personRow));
   const total = state.demo.activity_total;
   $("manage-activity-count").textContent = total ? `${total} logged interaction${total === 1 ? "" : "s"}` : "The log is empty.";
   $("manage-clear-activity").disabled = !total;

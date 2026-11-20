@@ -43,3 +43,23 @@ def remove_person(label: str, voices_dir: Path, path: Path = PEOPLE_FILE) -> dic
     if voice.exists():
         voice.unlink()
     return match
+
+
+def permissions_of(label: str, people: list[dict]) -> dict | None:
+    person = next((p for p in people if Path(p["voice_file"]).stem == label), None)
+    return person.get("permissions") if person else None
+
+
+def update_person(label: str, relationship: str | None, permissions: dict | None,
+                  path: Path = PEOPLE_FILE) -> dict | None:
+    people = load_people(path)
+    person = next((p for p in people if Path(p["voice_file"]).stem == label), None)
+    if person is None or person["relationship"] == "owner":
+        return None
+    if relationship is not None:
+        person["relationship"] = relationship
+        person.pop("permissions", None)
+    if permissions is not None:
+        person["permissions"] = dict(permissions)
+    save_people(people, path)
+    return person
