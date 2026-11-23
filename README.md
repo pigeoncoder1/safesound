@@ -21,12 +21,10 @@ Open https://127.0.0.1:8000 in a tab:
 2. Press start mic.
 3. Click "How to try it" (top right) for example prompts.
 
-It works with regex for prompts, but adding your anthropic key to the .env file lets it understand non-natural phrasing
+It works with regex for prompts, but adding your anthropic key to the .env file lets it understand non-natural phrasing. Adding a .env file and filling in your anthropic key **is advised**. For testing, I have submitted my own key with a limit in the form alongside my submission.
 
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your-key-here
-
-I've added my own api key for interviewer testing, with a limit of £5 in credits.
 
 The AI only ever sees the transcript text, never your messages, location or calendar.
 
