@@ -3,5 +3,10 @@
     "name": "Richie",
     "relationship": "owner",
     "voice_file": "voices/owner.npy"
+  },
+  {
+    "name": "Mika",
+    "relationship": "friend",
+    "voice_file": "voices/mika.npy"
   }
 ]

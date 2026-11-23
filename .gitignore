@@ -6,8 +6,6 @@ __pycache__/
 venv/
 .venv/
 
-.env
-
 data/*
 !data/people.json
 !data/world.json
