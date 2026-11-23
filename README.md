@@ -1,5 +1,58 @@
 # soundsafe
 
+A voice assistant that knows **who is speaking**, alongside **who can hear**, and changes the response depending on these two factors. Friends get rough answers, strangers get nothing, and people that are calling are checked against their voice, not just their number/called id. Safesound never reveals that some information is being held back.
+
+Speaker recognition model and STT run locally, never leaves your machine.
+
+#Run it
+You need: Python 3.11 or 3.12, supported browser, microphone, internet for first connection (downloads ~200MB of speech models)
+
+```bash
+git clone https://github.com/pigeoncoder1/safesound.git
+cd safesound
+python -m venv venv
+venv\Scripts\activate            # Mac/Linux: source venv/bin/activate
+pip install -r requirements.txt
+python -m safesound.server
+```
+
+Open https://127.0.0.1:8000 in a tab:
+1. Set up your voice
+2. Press start mic.
+3. Click "How to try it" (top right) for example prompts.
+
+It works with regex for prompts, but adding your anthropic key to the .env file lets it understand non-natural phrasing
+
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-key-here
+
+I've added my own api key for interviewer testing, with a limit of £5 in credits.
+
+The AI only ever sees the transcript text, never your messages, location or calendar.
+
+Optionally, Safesound also supports Llama through Ollama if you want to run the AI model locally:
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+
+Run tests using: ```python -m pytest```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 during testing, trying to find the ideal threshold for recognising the speaker, these are the results.
 
 <img width="960" height="540" alt="image" src="https://github.com/user-attachments/assets/5aa28de0-5095-4a72-a479-3c115d2f7523" />
